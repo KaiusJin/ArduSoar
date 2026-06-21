@@ -43,10 +43,15 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8):
+def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
+                       step_km=None):
     """Build a cross-country prior whose candidates are REAL W* grid cells over a
     size_km box (not a small-box sampled field). Each reachable cell with
     W* >= w_min becomes a candidate at its true ENU position relative to (lat,lon).
+
+    step_km (Open-Meteo only) samples finer than the native ~28 km GFS grid — the
+    W* values stay real (per-point Deardorff on GFS inputs) but positions are
+    denser, so the route is flyable thermal-to-thermal. SoaringMeteo is fixed-grid.
     """
     half_lat = (size_km / 2.0) / 111.0
     half_lon = (size_km / 2.0) / (111.0 * math.cos(math.radians(lat)))
@@ -56,10 +61,11 @@ def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8):
                                   lon - half_lon, lon + half_lon)
     else:
         import datetime as _dt
-        from weather.openmeteo_thermal import fetch_region
+        from weather.openmeteo_thermal import fetch_region, GFS_RES
         at_time = at_time or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT18:00:00Z")
+        step_deg = (step_km / 111.0) if step_km else GFS_RES
         meta, recs = fetch_region(lat - half_lat, lat + half_lat,
-                                  lon - half_lon, lon + half_lon, at_time)
+                                  lon - half_lon, lon + half_lon, at_time, step_deg=step_deg)
     cands, winds, base = [], [], []
     for r in recs:
         w = r["thermal_velocity_ms"]
@@ -159,6 +165,20 @@ def write_json(route_ll, prior, origin, goal_ll, path, takeoff_alt, ceiling_alt)
     return path
 
 
+def write_sitl_thermals(route_ll, path, radius=400.0, ref_enu=(0.0, 0.0)):
+    """Write a SITL thermal-truth file (scenario 5): one thermal per route
+    waypoint at its real forecast position, in metres relative to ``ref_enu``
+    (the SITL home). Line: "x_north y_east w r", matching SIM_Aircraft.cpp's local
+    frame (x=North, y=East). The planner's ENU is x=East, y=North.
+    """
+    rx, ry = ref_enu
+    with open(path, "w") as f:
+        for wp in route_ll:
+            f.write(f"{wp['enu_y'] - ry:.1f} {wp['enu_x'] - rx:.1f} "
+                    f"{wp['w_star']:.2f} {radius:.1f}\n")
+    return path
+
+
 def write_qgc(route_ll, origin, path, takeoff_alt, ceiling_alt, home_alt=0.0,
               plain=False):
     """Write a native ArduPilot mission (QGC WPL 110).
@@ -215,6 +235,8 @@ def main():
     ap.add_argument("--lon", type=float, default=-80.54)
     ap.add_argument("--region-km", type=float, default=None,
                     help="plan cross-country over a real W* grid of this size (km) instead of a local box")
+    ap.add_argument("--region-step-km", type=float, default=None,
+                    help="Open-Meteo sampling step (km) within the region (default: native ~28 km grid)")
     ap.add_argument("--w-min", type=float, default=0.8, help="min W* (m/s) for a region cell to be a candidate")
     ap.add_argument("--goal-lat", type=float, default=None)
     ap.add_argument("--goal-lon", type=float, default=None)
@@ -224,11 +246,15 @@ def main():
     ap.add_argument("--plain", action="store_true",
                     help="emit plain NAV_WAYPOINTs instead of soaring NAV_LOITER_TO_ALT")
     ap.add_argument("--max-waypoints", type=int, default=8)
+    ap.add_argument("--sitl-thermals", default=None,
+                    help="also write a SITL scenario-5 thermal-truth file at the route positions")
+    ap.add_argument("--thermal-radius", type=float, default=400.0)
     ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "routes"))
     args = ap.parse_args()
 
     if args.region_km and not args.prior:
-        prior = build_region_prior(args.source, args.lat, args.lon, args.region_km, w_min=args.w_min)
+        prior = build_region_prior(args.source, args.lat, args.lon, args.region_km,
+                                   w_min=args.w_min, step_km=args.region_step_km)
     else:
         prior = _load_prior(args)
     loc = prior["location"]
@@ -238,17 +264,19 @@ def main():
     if args.goal_lat is not None and args.goal_lon is not None:
         goal_enu = latlon_to_enu(origin[0], origin[1], args.goal_lat, args.goal_lon)
 
-    route, goal_enu = plan_route(prior, goal_enu=goal_enu, plan_alt=1500.0,
-                                 max_waypoints=args.max_waypoints)
-    route_ll = to_latlon_route(route, origin)
-    goal_ll = enu_to_latlon(origin[0], origin[1], goal_enu[0], goal_enu[1])
-
     # soaring ceiling: climb to just under cloud base at each thermal
     if args.ceiling_alt is not None:
         ceiling = args.ceiling_alt
     else:
         base = prior.get("cloud_base_m") or 600.0
         ceiling = _clamp(base - 200.0, args.takeoff_alt + 50.0, 3000.0)
+
+    # plan reachability from the ceiling's glide range, so the route only hops as
+    # far as the aircraft can actually glide between thermals.
+    route, goal_enu = plan_route(prior, goal_enu=goal_enu, plan_alt=ceiling,
+                                 max_waypoints=args.max_waypoints)
+    route_ll = to_latlon_route(route, origin)
+    goal_ll = enu_to_latlon(origin[0], origin[1], goal_enu[0], goal_enu[1])
 
     os.makedirs(args.out_dir, exist_ok=True)
     tag = f"{prior.get('source','route')}_{args.lat}_{args.lon}"
@@ -258,6 +286,13 @@ def main():
     wpath = write_qgc(route_ll, origin,
                       os.path.join(args.out_dir, f"route_{tag}.waypoints"),
                       args.takeoff_alt, round(ceiling), plain=args.plain)
+
+    if args.sitl_thermals:
+        # express thermals relative to the first waypoint (the SITL home), so the
+        # aircraft starts at a thermal and climbs out before gliding to the next.
+        ref = (route_ll[0]["enu_x"], route_ll[0]["enu_y"]) if route_ll else (0.0, 0.0)
+        write_sitl_thermals(route_ll, args.sitl_thermals, radius=args.thermal_radius, ref_enu=ref)
+        print(f"  SITL home (first hotspot): {route_ll[0]['lat']:.6f},{route_ll[0]['lon']:.6f}")
 
     print(f"Ground route from {prior.get('source')}  origin {origin[0]:.5f},{origin[1]:.5f}  "
           f"W*~{prior.get('thermal_strength_ms')} m/s  ceiling {round(ceiling)} m")

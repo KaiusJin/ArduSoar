@@ -8,6 +8,41 @@ companion will use to push GUIDED waypoints to the real aircraft.
 
 ![ArduSoar in SITL](soaring_demo.png)
 
+## Weather-truth: real weather flown end-to-end
+
+`run_weather_truth_demo.sh` connects the two halves that were previously tested
+apart — **real weather → route** (planner) and **aircraft catches lift** (SITL):
+
+![weather-truth](weather_truth_demo.png)
+
+It plans a route from **real Open-Meteo W\***, places simulated thermals **at those
+forecast positions** (a patched SITL scenario, see below), starts SITL at the first
+hotspot, and flies the mission. ArduSoar then climbs at **every forecast hotspot**:
+
+```
+hotspot 1 (43.335,-80.490, W*=2.18): LIFT FOUND, +206 m
+hotspot 2 (43.335,-80.310, W*=2.39): LIFT FOUND, +224 m
+hotspot 3 (43.245,-80.220, W*=2.69): LIFT FOUND, +248 m
+-> 3/3 forecast hotspots produced real lift in the air
+```
+
+This is the closest-to-real validation before hardware. (The sawtooth between
+thermals in the plot is the powered glider motoring along low when the next
+forecast thermal is farther than its glide range — a spacing/ceiling tuning knob.)
+
+**SITL patch** (`sitl_thermals_scenario5.patch`): adds `SIM_THML_SCENARI=5`, which
+loads thermals from `/tmp/sitl_thermals.txt` (one per line: `x_north y_east w r`),
+so thermals can be placed at arbitrary (forecast) positions. Apply with
+`cd ../../ardupilot && git apply ../autoglide/sitl/sitl_thermals_scenario5.patch && ./waf plane`.
+
+```bash
+sitl/run_weather_truth_demo.sh [lat] [lon]    # plan from real weather + fly it
+sitl/plot_weather_truth.py                     # render weather_truth_demo.png
+sitl/run_route_demo.sh                         # validate a planner route flies (single local thermal)
+```
+
+## Milestone 1 — reproduce ArduSoar
+
 The plane cruises an AUTO mission, ArduSoar detects rising air, switches to
 **THERMAL** (LOITER) circling (shaded), climbs toward `SOAR_ALT_MAX`, then
 returns to AUTO — exactly the stock ArduSoar behaviour, validated end-to-end.

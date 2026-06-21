@@ -14,6 +14,7 @@ weather/prior_latest.json
 
 # SITL / companion run artifacts (regenerable)
 sitl/soaring_log.csv
+sitl/weather_truth_trace.csv
 companion/sitl_prior.json
 
 # planner output routes (regenerable)
