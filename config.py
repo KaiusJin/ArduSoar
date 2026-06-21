@@ -1,4 +1,4 @@
-"""Central configuration for the simplified AutoGlide simulation.
+"""Central configuration for the ArduSoar simulation.
 
 All tunable numbers live here so the rest of the code stays readable. Units are
 SI (metres, seconds, radians) unless a name says otherwise (``*_deg``).

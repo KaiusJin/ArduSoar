@@ -1,4 +1,4 @@
-"""Plotly Dash dashboard for the AutoGlide thermal-soaring simulation.
+"""Plotly Dash dashboard for the ArduSoar thermal-soaring simulation.
 
     python -m dashboard.app          # then open http://127.0.0.1:8050
 
@@ -156,7 +156,7 @@ def status_line():
 
 # --- layout -----------------------------------------------------------------
 app = Dash(__name__)
-app.title = "AutoGlide dashboard"
+app.title = "ArduSoar dashboard"
 server = app.server          # WSGI entry point for gunicorn / deployment
 
 
@@ -167,7 +167,7 @@ def _num(id_, label, value, mn, mx, step):
 
 
 controls = html.Div([
-    html.H3("AutoGlide"),
+    html.H3("ArduSoar"),
     html.Div([
         html.Button("▶ Play", id="play", n_clicks=0),
         html.Button("⏸ Pause", id="pause", n_clicks=0, style={"marginLeft": "6px"}),

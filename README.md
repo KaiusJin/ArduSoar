@@ -1,7 +1,9 @@
-# AutoGlide (Simplified)
+# ArduSoar
 
-A small, readable autonomous thermal-soaring simulation, built step by step from
-[`proposal.md`](proposal.md) and inspired by `sahil-kale/autoglide`.
+A readable autonomous thermal-soaring simulation & research platform, aligned with
+**ArduPilot's ArduSoar controller** ([docs](https://ardupilot.org/plane/docs/soaring.html)).
+See [`proposal.md`](proposal.md) for the direction. (Originally inspired by
+`sahil-kale/autoglide`; see Attribution below.)
 
 It started as a single-thermal demo (cruise → detect lift → circle → climb) and
 has grown into a cross-country soarer that **searches** for off-route thermals,

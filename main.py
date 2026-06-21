@@ -11,7 +11,7 @@ from simulator.plotting import plot_results
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Simplified AutoGlide simulation")
+    parser = argparse.ArgumentParser(description="ArduSoar simulation")
     parser.add_argument(
         "--optimize",
         action="store_true",

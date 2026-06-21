@@ -50,7 +50,7 @@ def render_3d(log: SimLog = None, filename: str = "soaring_3d.gif", stride: int 
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
     ax.set_zlabel("altitude (m)")
-    ax.set_title("AutoGlide (simplified) — 3D soaring")
+    ax.set_title("ArduSoar — 3D soaring")
 
     # Static translucent thermal column.
     theta = np.linspace(0, 2 * np.pi, 48)

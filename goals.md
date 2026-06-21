@@ -1,4 +1,4 @@
-# AutoGlide — Detailed Goals
+# ArduSoar — Detailed Goals
 
 This document defines what "done" means as the project moves from an idealised
 single-thermal demo toward **autonomous cross-country soaring in a realistic,

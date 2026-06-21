@@ -1,1 +1,1 @@
-"""Interactive dashboard for the AutoGlide thermal-soaring simulation."""
+"""Interactive dashboard for the ArduSoar thermal-soaring simulation."""

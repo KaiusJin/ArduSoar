@@ -1,4 +1,4 @@
-# AutoGlide dashboard (Plotly Dash)
+# ArduSoar dashboard (Plotly Dash)
 
 Interactive front-end for the thermal-soaring simulation: input parameters,
 watch the flight live, and adjust playback speed to observe.
@@ -7,7 +7,7 @@ watch the flight live, and adjust playback speed to observe.
 
 ```bash
 pip install dash plotly        # one-time (see requirements.txt)
-cd autoglide_simplified
+cd ardusoar          # the project root
 python -m dashboard.app         # open http://127.0.0.1:8050
 ```
 
