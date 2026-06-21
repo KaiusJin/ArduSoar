@@ -165,6 +165,42 @@ def set_current_wp(m, seq):
     m.mav.mission_set_current_send(m.target_system, m.target_component, seq)
 
 
+def upload_qgc_file(m, path):
+    """Upload a QGC WPL 110 .waypoints file (as written by planner/) verbatim."""
+    items = []
+    with open(path) as f:
+        if not f.readline().startswith("QGC WPL"):
+            raise ValueError("not a QGC WPL file")
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            c = line.split("\t")
+            items.append(dict(seq=int(c[0]), frame=int(c[2]), cmd=int(c[3]),
+                              p1=float(c[4]), p2=float(c[5]), p3=float(c[6]), p4=float(c[7]),
+                              x=float(c[8]), y=float(c[9]), z=float(c[10])))
+    m.mav.mission_count_send(m.target_system, m.target_component,
+                             len(items), mavutil.mavlink.MAV_MISSION_TYPE_MISSION)
+    sent = set()
+    deadline = time.time() + 30
+    while len(sent) < len(items) and time.time() < deadline:
+        req = m.recv_match(type=["MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"],
+                           blocking=True, timeout=5)
+        if req is None:
+            continue
+        if req.get_type() == "MISSION_ACK":
+            break
+        it = items[req.seq]
+        m.mav.mission_item_int_send(
+            m.target_system, m.target_component, it["seq"], it["frame"], it["cmd"], 0, 1,
+            it["p1"], it["p2"], it["p3"], it["p4"],
+            int(it["x"] * 1e7), int(it["y"] * 1e7), it["z"],
+            mavutil.mavlink.MAV_MISSION_TYPE_MISSION)
+        sent.add(req.seq)
+    ack = m.recv_match(type="MISSION_ACK", blocking=True, timeout=10)
+    return ack is not None and ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED, len(items)
+
+
 def goto_global(m, lat, lon, alt_rel, want_ack=False):
     """Command a GUIDED target position via MAV_CMD_DO_REPOSITION.
 
