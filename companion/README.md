@@ -75,10 +75,23 @@ runs the companion, and tears down. Needs the same `../../ardupilot` build and
 - **Enabling soaring** uses `MAV_CMD_DO_AUX_FUNCTION(88, HIGH)` — see
   `../sitl/README.md` for why a plain RC override doesn't work headless.
 
+## Driving the prior from live weather
+
+`weather/soaringmeteo_prior.py` builds a companion-schema prior from a live
+SoaringMeteo forecast (W\* → candidate strength, soaring-layer top → ceiling, BL
+wind → drift):
+
+```bash
+python -m weather.soaringmeteo_prior        # fetch today's run -> prior JSON
+```
+
+The companion's selection runs straight on it — real weather → best reachable
+hotspot at a real lat/lon. (The SITL fly-out still uses `make_sitl_prior.py`,
+since SITL's synthetic thermal sits at a fixed offset; on real hardware the
+companion flies the SoaringMeteo coordinates directly.)
+
 ## Next
 
 - Multi-hotspot hop: after climbing out, pick the next candidate toward a goal
   (the `BeliefMap` already supports this) and repeat — cross-country under
   weather guidance.
-- Drive the prior from a live `weather/openmeteo_thermal.py` / `soaringmeteo.py`
-  run instead of the SITL stand-in.
