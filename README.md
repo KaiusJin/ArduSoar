@@ -1,115 +1,87 @@
 # ArduSoar
 
-A readable autonomous thermal-soaring simulation & research platform, aligned with
-**ArduPilot's ArduSoar controller** ([docs](https://ardupilot.org/plane/docs/soaring.html)).
-See [`proposal.md`](proposal.md) for the direction. (Originally inspired by
-`sahil-kale/autoglide`; see Attribution below.)
+Autonomous thermal soaring built on **ArduPilot's ArduSoar controller**
+([docs](https://ardupilot.org/plane/docs/soaring.html)). See [`proposal.md`](proposal.md)
+for the full direction. (Originally inspired by `sahil-kale/autoglide`; see
+Attribution below.)
 
-It started as a single-thermal demo (cruise → detect lift → circle → climb) and
-has grown into a cross-country soarer that **searches** for off-route thermals,
-**captures** them, **hops** between them to a goal, and can fly a **prior-guided**
-search from an uploaded thermal map + wind — all behind a **sensor abstraction
-layer** ready for real hardware.
+## Direction
 
-## Core idea
-
-```
-net climb:        h_dot   = w - v_s        (thermal lift minus sink rate)
-reconstructed w:  w_meas  = h_dot + v_s    (what the estimator fits)
-thermal model:    w(r)    = W_0 * exp(-r^2 / R_th^2)
-```
-
-## Capabilities (in the order they were built)
-
-1. **Single-thermal tracking** — online least-squares Gaussian estimator +
-   `Cruise / Probe / Thermal` state machine + L1 guidance + circling. Climbs
-   ~300 → 936 m on the nominal thermal.
-2. **Figure-8 search** — cruise flies straight, then a periodic figure-8 to sweep
-   ~±90 m off the route, so it finds thermals that aren't on the cruise line.
-3. **Capture hysteresis** — once it touches a thermal it latches on long enough
-   for circling to spiral into the core (no more "drive-by" misses).
-4. **Cloud-base departure + cross-country** — climbs to a ceiling, leaves, and
-   (refusing to re-enter the *same* thermal) hops to the next one across a
-   multi-thermal map to reach a goal.
-5. **Sensor + estimation interfaces** — guidance reads `VehicleState` / `Wind` /
-   `ThermalMap`, never raw sensors; swap simulated sensors for hardware later.
-6. **Prior-guided search** — upload a thermal map + wind → wind-drifted candidate
-   points with probabilities → fly to the best reachable one, validate by flying
-   (bounded expanding figure-8), **confirm/disconfirm**, and hop to the goal.
-
-## Layout
+We no longer build our own flight controller. ArduPilot's ArduSoar already solves
+the **tactical** problem brilliantly — once the aircraft is in rising air, centre
+the thermal and climb. What it can't do is know **where today's thermals are**.
+That **strategic** problem is our differentiator, and it's driven by real weather.
 
 ```
-config.py              all tunable constants
-main.py                run the basic sim + save plots
-glider_model/          kinematic glider (coordinated turn, bank-dependent sink)
-thermal_model/         Gaussian thermal + ThermalField (multi-thermal world)
-thermal_estimator/     rolling window + regularized least-squares fit
-controller/            state machine (capture hysteresis + cloud base),
-                       L1 guidance, cruise (figure-8 search), probe, circling
-simulator/             simulation loop + plotting + 3D animation
-sensors/               sensor abstraction (interfaces + simulated)  -> sensors/README.md
-estimation/            state fusion (proposal 5) + wind estimation (proposal 4)
-navigation/            thermal map, prior belief, contact detector (proposal 2)
-monte_carlo/           randomised robustness analysis  -> monte_carlo/readme.md
-tests/                 unit tests
-output/                saved figures / animations
+ Strategic layer (this repo)              Tactical layer (ArduSoar, onboard)
+ ----------------------------             ----------------------------------
+ weather forecast -> thermal prior        detect lift, enter THERMAL,
+ pick today's best hotspot                centre the core, climb
+ fly the aircraft there (MAVLink)   -->   ArduSoar takes the handoff
+```
+
+## Asset groups
+
+### 1. Active — the strategic differentiator
+| Dir | Role |
+|---|---|
+| [`weather/`](weather/) | **Core.** SoaringMeteo GFS grabber + Open-Meteo Deardorff W\* pipeline → thermal-velocity / cloud-base / wind **prior**. "Where are today's thermals." |
+| [`companion/`](companion/README.md) | **MAVLink bridge.** Reads the prior, picks the best reachable hotspot, flies the aircraft there, hands off to ArduSoar. **Working end-to-end in SITL.** |
+| [`sitl/`](sitl/README.md) | **ArduSoar reproduction.** Drives ArduPilot SITL's ArduSoar over MAVLink with zero hardware (Milestone 1). |
+
+### 2. Kept tooling
+| Dir | Role |
+|---|---|
+| [`navigation/`](navigation/) | Strategic belief map + value-based commit decision. **Reused by `companion/`** (`thermal_prior.BeliefMap`, `decision.worth_climbing`). |
+| [`dashboard/`](dashboard/README.md) | Plotly Dash dashboard — endurance + battery return-home. |
+| [`sensors/`](sensors/README.md) | Sensor abstraction (interfaces + simulated), so guidance never touches a raw sensor. |
+
+### 3. Baseline reference — the original self-built simulator
+Superseded by ArduSoar for the onboard control loop, but **kept runnable** as a
+baseline and because the dashboard still demos it:
+
+| Dir | Role |
+|---|---|
+| `glider_model/` | kinematic glider (coordinated turn, bank-dependent sink) |
+| `thermal_model/` | Gaussian thermal + changing-world `ThermalField` (drift / lifecycle / merge) |
+| `thermal_estimator/` | rolling-window regularised least-squares thermal fit *(retired: ArduSoar's EKF replaces it)* |
+| `controller/` | state machine, L1 guidance, cruise/probe/circling *(retired: ArduSoar replaces it)* |
+| `simulator/`, `estimation/`, `monte_carlo/` | sim loop + plotting, state/wind fusion, robustness analysis |
+
+The core soaring identity is shared across both worlds:
+
+```
+net climb:  h_dot  = w - v_s         (thermal lift minus sink rate)
+vario:      w_meas = h_dot + v_s
+thermal:    w(r)   = W_0 * exp(-r^2 / R_th^2)
 ```
 
 ## Run
 
+**ArduSoar in SITL** (needs an ArduPilot SITL build + `soar-venv`; see
+[`sitl/README.md`](sitl/README.md)):
+
+```bash
+sitl/run_demo.sh                 # reproduce ArduSoar thermalling in pure software
+companion/run_companion_demo.sh  # weather hotspot -> fly there -> hand off to ArduSoar
+```
+
+**Weather pipeline** and **baseline simulator**:
+
 ```bash
 pip install -r requirements.txt
-
-python main.py                       # single-thermal sim + plots
-python main.py --video               # also render the 3D soaring GIF
-python cross_country.py              # multi-thermal cross-country (hop to a goal)
-python prior_guided_search.py        # upload-map + wind, prior-guided search
-python -m monte_carlo.run_monte_carlo  # randomised robustness analysis
-
-python -m pytest tests               # run the unit tests
+python -m weather.openmeteo_thermal     # Deardorff W* thermal prior from Open-Meteo
+python main.py                          # baseline single-thermal sim + plots
+python cross_country.py                 # baseline multi-thermal cross-country
+python -m pytest tests                  # unit tests (59 passing)
 ```
 
-## Architecture: from sensors to a plan
+## Status
 
-The guidance brain never touches a raw sensor. Data flows:
-
-```
-sensors (sim or hardware)
-   -> SensorSnapshot          raw accel/gyro/GPS/compass/pitot/baro
-   -> StateFusion  -> VehicleState   (proposal 5)
-   -> WindEstimator -> Wind          (proposal 4)
-   -> ThermalMap / BeliefMap         (proposal 2: map, score, reachability, planning)
-```
-
-So when the real GPS/IMU/pitot arrive, only the bottom layer changes — guidance,
-the map, and the planners are untouched. See [`sensors/README.md`](sensors/README.md).
-
-## Prior-guided search (the upload-map strategy)
-
-Before flight: upload candidate thermal *source* locations + the wind. Thermals
-drift downwind, so each candidate's predicted position = source + wind drift. In
-flight the glider:
-
-1. flies **straight** to the highest-probability **reachable** candidate (toward the goal),
-2. runs a **bounded expanding figure-8** there (3 loops, 35° → 28° → 22°, reach
-   ~75 → 130 m, ~120 s) and watches the variometer,
-3. on contact → captures, circles, climbs, and **confirms** the candidate,
-4. if the search boundary is hit with no lift → **disconfirms** and the map sends
-   it straight to the next point (no wasted circling = saves energy).
-
-```bash
-python prior_guided_search.py
-```
-
-## Scope / what's idealised
-
-Constant airspeed; the prior-guided demo runs on **clean** sensor data (realistic
-sensor noise currently fools the `1/(1+mse)` confidence metric into false
-captures — the next algorithm task is the chi-squared confidence upgrade).
-Thermals are **static** in time; a thermal lifecycle model (grow/shrink/vanish)
-is the next world-model task. See `proposal.md` §16–17 for non-goals and the
-roadmap.
+- ✅ **Milestone 1** — ArduSoar thermalling reproduced in SITL (`sitl/`).
+- ✅ **Step 3** — weather-guided companion: prior → hotspot → handoff, confirmed in SITL (`companion/`).
+- ☐ Hardware bring-up (Matek F405-Wing-V2 + ASPD-4525 + Pi 5); see [`docs/`](docs/).
+- ☐ Multi-hotspot cross-country under live weather.
 
 ## Attribution
 This project is derived from the original AutoGlide repository by Sahil Kale. The original author is not affiliated with, endorsing, collaborating on, or currently involved in this derivative project.
