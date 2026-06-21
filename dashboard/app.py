@@ -19,6 +19,7 @@ from config import DT
 from dashboard.engine import Engine, Params
 from weather.collector import fetch_weather
 from weather.processor import make_prior
+from weather import soaringmeteo_prior, openmeteo_prior
 
 # --- server-side simulation state (single local user) -----------------------
 SIM = {"engine": Engine(Params()), "history": [], "playing": False, "speed": 10}
@@ -196,6 +197,11 @@ controls = html.Div([
         dcc.Input(id="lon", type="number", value=-80.54, step=0.01,
                   style={"width": "47%", "marginLeft": "6%"}),
     ], style={"marginBottom": "8px"}),
+    dcc.Dropdown(id="wx-source", clearable=False, value="openmeteo",
+                 options=[{"label": "Open-Meteo (rad/CAPE)", "value": "openmeteo"},
+                          {"label": "Open-Meteo W* (Deardorff)", "value": "openmeteo_wstar"},
+                          {"label": "SoaringMeteo (GFS)", "value": "soaringmeteo"}],
+                 style={"marginBottom": "8px", "fontSize": "12px"}),
     html.Button("🌤 use weather", id="weather", n_clicks=0),
     html.Div(id="weather-status", style={"fontSize": "11px", "color": "#555",
                                          "marginTop": "8px", "lineHeight": "1.4"}),
@@ -241,23 +247,28 @@ def control(_p, _pa, _r, speed, seed, wx, wy, airspeed, battery, decay, noise):
 
 @app.callback(Output("weather-status", "children"),
               Input("weather", "n_clicks"),
-              State("lat", "value"), State("lon", "value"), State("seed", "value"))
-def use_weather(n, lat, lon, seed):
-    """Fetch real weather for (lat, lon), build a forecast prior, and restart the
-    flight on it (world + map both come from the weather — no make_uploaded_map)."""
+              State("lat", "value"), State("lon", "value"),
+              State("seed", "value"), State("wx-source", "value"))
+def use_weather(n, lat, lon, seed, source):
+    """Fetch a real forecast for (lat, lon) from the chosen source, build a prior,
+    and restart the flight on it (the glider's map is the forecast — no cheat)."""
     if not n:
         return ""
     try:
-        w = fetch_weather(float(lat), float(lon))
-        prior = make_prior(w, BOUNDS, seed=1, generated_at=w["time"])
+        lat, lon = float(lat), float(lon)
+        if source == "soaringmeteo":
+            prior = soaringmeteo_prior.build_prior(lat, lon, bounds=BOUNDS)
+        elif source == "openmeteo_wstar":
+            prior = openmeteo_prior.build_prior(lat, lon, bounds=BOUNDS)
+        else:
+            prior = make_prior(fetch_weather(lat, lon), BOUNDS, seed=1)
         with _LOCK:
             SIM["engine"] = Engine(Params.from_weather(prior, seed=int(seed or 4)))
             SIM["history"] = [SIM["engine"].last]
             SIM["playing"] = False
-        return (f"✓ {w['time']}: rad {w['radiation_wm2']:.0f} W/m², CAPE {w['cape_jkg']:.0f}, "
-                f"cloud {w['cloud_pct']:.0f}% → {prior['thermal_count']} thermals @ "
-                f"~{prior['thermal_strength_ms']} m/s, base {prior['cloud_base_m']} m, "
-                f"wind {prior['wind']} m/s. Press ▶ Play.")
+        return (f"✓ {source} {prior['location'].get('time', '')}: "
+                f"{prior['thermal_count']} thermals @ ~{prior['thermal_strength_ms']} m/s, "
+                f"base {prior['cloud_base_m']} m, wind {prior['wind']} m/s. Press ▶ Play.")
     except Exception as e:
         return f"✗ weather fetch failed: {e}"
 

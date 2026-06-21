@@ -37,3 +37,16 @@ dashboard/app.py      Dash UI; dcc.Interval -> Engine.step() x speed -> figures
 `Engine` mirrors `explore.py`'s per-tick logic but is parameterised (no module
 globals), so every slider maps onto a `Params` field. The same engine is the
 clean "edge / tactical layer" seam for a future cloud split.
+
+## Fly today's real forecast
+
+The **🌤 use weather** button fetches a real forecast for the (lat, lon) and flies
+it in sim — the glider's map *is* the forecast (no cheat). Pick the source:
+
+- **Open-Meteo (rad/CAPE)** — bulk params → strength heuristic (`weather/processor.py`)
+- **Open-Meteo W\* (Deardorff)** — convective velocity (`weather/openmeteo_prior.py`)
+- **SoaringMeteo (GFS)** — thermal velocity / BL top / wind (`weather/soaringmeteo_prior.py`)
+
+This is where you watch the **weather-guided strategy** (prior → hop between
+hotspots → confirm/disconfirm → reach the goal) play out on real data. The MAVLink
+companion (`../companion/`) runs the same strategy against a real autopilot.
