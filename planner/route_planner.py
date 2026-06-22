@@ -94,11 +94,15 @@ def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
 
 
 def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
-               max_waypoints=8, arrive_m=120.0):
+               max_waypoints=8, arrive_m=120.0, energy=None):
     """Return an ordered list of waypoints (dicts) from a weather prior.
 
     Each waypoint: {seq, enu_x, enu_y, w_star, prob}. Greedy: best reachable
     candidate toward the goal, mark it used, step there, repeat.
+
+    ``energy`` (optional ``planner.energy.EnergyModel``): stop extending the route
+    once the next hop is beyond the battery's return-home budget — so the plan
+    can't commit to a waypoint the aircraft couldn't motor home from.
     """
     cands = [CandidatePoint(x=c[0], y=c[1], prob=c[3], strength_guess=c[2])
              for c in prior["candidates"]]
@@ -114,14 +118,20 @@ def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
 
     route = []
     cur = start_enu
-    for seq in range(max_waypoints):
+    while len(route) < max_waypoints:
         target = belief.best_target(cur[0], cur[1], plan_alt, goal_enu)
         if target is None:
             break
-        route.append({"seq": seq + 1, "enu_x": round(target.x, 1),
-                      "enu_y": round(target.y, 1),
-                      "w_star": round(target.strength_guess, 2),
-                      "prob": round(target.prob, 2)})
+        if energy is not None and not energy.affordable(target.x, target.y, plan_alt):
+            # can't motor home from there on the battery — drop it and try a
+            # closer reachable candidate instead of giving up on the whole route.
+            target.confirmed = True
+            continue
+        wp = {"seq": len(route) + 1, "enu_x": round(target.x, 1), "enu_y": round(target.y, 1),
+              "w_star": round(target.strength_guess, 2), "prob": round(target.prob, 2)}
+        if energy is not None:
+            wp["return_home_wh"] = round(energy.return_home_wh(target.x, target.y, plan_alt), 1)
+        route.append(wp)
         target.confirmed = True            # mark used so we don't re-pick it
         cur = (target.x, target.y)
         if math.hypot(goal_enu[0] - cur[0], goal_enu[1] - cur[1]) <= arrive_m:
@@ -251,8 +261,19 @@ def main():
     ap.add_argument("--sitl-thermals", default=None,
                     help="also write a SITL scenario-5 thermal-truth file at the route positions")
     ap.add_argument("--thermal-radius", type=float, default=400.0)
+    ap.add_argument("--battery-wh", type=float, default=None,
+                    help="usable battery (Wh); enables the motor-energy budget so the route "
+                         "won't commit past where the aircraft could still motor home")
+    ap.add_argument("--motor-power-w", type=float, default=600.0)
+    ap.add_argument("--reserve-wh", type=float, default=8.0)
     ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "routes"))
     args = ap.parse_args()
+
+    energy = None
+    if args.battery_wh is not None:
+        from planner.energy import EnergyModel
+        energy = EnergyModel(battery_wh=args.battery_wh, motor_power_w=args.motor_power_w,
+                             reserve_wh=args.reserve_wh)
 
     if args.region_km and not args.prior:
         prior = build_region_prior(args.source, args.lat, args.lon, args.region_km,
@@ -280,7 +301,7 @@ def main():
     # plan reachability from the ceiling's glide range, so the route only hops as
     # far as the aircraft can actually glide between thermals.
     route, goal_enu = plan_route(prior, goal_enu=goal_enu, plan_alt=ceiling,
-                                 max_waypoints=args.max_waypoints)
+                                 max_waypoints=args.max_waypoints, energy=energy)
     route_ll = to_latlon_route(route, origin)
     goal_ll = enu_to_latlon(origin[0], origin[1], goal_enu[0], goal_enu[1])
 
