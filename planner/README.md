@@ -59,6 +59,33 @@ mode `AUTO`, arm. Then it does vision and returns data; if it reports
 vision-confirmed thermal positions we feed them back (`BeliefMap.confirm/disconfirm`)
 and re-emit an updated route.
 
+## Re-planning from vision feedback
+
+`replan.py` closes the loop: the Pi 5 reports what its camera/vario actually saw
+while flying the route, we fold that into the belief map, and emit an updated
+route + mission from the aircraft's current position.
+
+Vision-report format (the Pi 5 → ground message; our schema):
+
+```json
+{
+  "aircraft": {"lat": 43.34, "lon": -80.49, "alt_m": 620},
+  "observations": [
+    {"lat": 43.34, "lon": -80.31, "kind": "lift",  "w_star": 2.6},
+    {"lat": 43.30, "lon": -80.40, "kind": "empty"},
+    {"lat": 43.28, "lon": -80.35, "kind": "cloud", "w_star": 3.2}
+  ]
+}
+```
+
+`lift`/`cloud` raise confidence (or **add** a thermal the forecast missed);
+`empty` lowers it (searched, nothing). Then it re-plans from `aircraft`.
+
+```bash
+python -m planner.replan --prior <prior.json> --vision <report.json>
+python -m planner.replan --prior <prior.json> --demo     # synthesize a sample report
+```
+
 ## Validated in SITL
 
 `sitl/run_route_demo.sh` plans a SITL-local route and flies that exact `.waypoints`
