@@ -102,6 +102,8 @@ def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
     """
     cands = [CandidatePoint(x=c[0], y=c[1], prob=c[3], strength_guess=c[2])
              for c in prior["candidates"]]
+    if not cands:                          # weak/empty forecast: nothing to route to
+        return [], (goal_enu or start_enu)
     belief = BeliefMap(cands)
     if goal_enu is None:
         # default goal = the strongest candidate (prob x strength). For a long
@@ -257,6 +259,10 @@ def main():
                                    w_min=args.w_min, step_km=args.region_step_km)
     else:
         prior = _load_prior(args)
+    if not prior.get("candidates"):
+        raise SystemExit(
+            f"[planner] no forecast cell clears --w-min {args.w_min} m/s — weak day. "
+            f"Lower --w-min, or pick a stronger time/location.")
     loc = prior["location"]
     origin = (loc["lat"], loc["lon"])
 
