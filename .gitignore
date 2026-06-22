@@ -19,3 +19,6 @@ companion/sitl_prior.json
 
 # planner output routes (regenerable)
 planner/routes/
+
+# playback animations (regenerable, large)
+sitl/weather_truth_playback.gif
