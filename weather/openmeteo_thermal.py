@@ -28,6 +28,7 @@ comparison against the SoaringMeteo map.
 
 from __future__ import annotations
 
+import datetime as _dt
 import math
 import time
 import urllib.parse
@@ -41,6 +42,12 @@ HOURLY = ["boundary_layer_height", "sensible_heat_flux", "temperature_2m",
           "surface_pressure", "wind_speed_925hPa", "wind_direction_925hPa"]
 G, RD, CP = 9.81, 287.05, 1004.0
 BATCH = 100                         # locations per Open-Meteo request
+
+
+def _default_time():
+    """Today at 18:00 UTC — a sensible mid-afternoon thermal sample for the US.
+    Used so the maps default to the current run instead of a stale hard-coded date."""
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT18:00:00Z")
 
 
 def compute_wstar(heat_flux_wm2, blh_m, temp_c, pressure_hpa):
@@ -121,11 +128,12 @@ def fetch_region(lat0, lat1, lon0, lon1, at_time, step_deg=GFS_RES):
 
 
 def map_box(lat=36.687, lon=-97.137, size_km=20.0, step_km=2.0,
-            at_time="2026-06-21T18:00:00Z", out_name="openmeteo_thermal_20km.png"):
+            at_time=None, out_name="openmeteo_thermal_20km.png"):
     """A finely-sampled map over a size_km x size_km box centred on (lat, lon).
     NOTE: the w* INPUTS are GFS (~25 km) in the US, so within a 20 km box the field
     is essentially one GFS cell — the fine sampling just renders it smoothly."""
     import os
+    at_time = at_time or _default_time()
     from weather.plot_soaringmeteo_map import plot_map, write_csv, _OUTPUT_DIR
     half = size_km / 2.0
     dlat = half / 111.0
@@ -143,8 +151,9 @@ def map_box(lat=36.687, lon=-97.137, size_km=20.0, step_km=2.0,
     return meta, recs
 
 
-def main(at_time="2026-06-21T18:00:00Z"):
+def main(at_time=None):
     import os
+    at_time = at_time or _default_time()
     from weather.plot_soaringmeteo_map import plot_map, write_csv, _OUTPUT_DIR
     meta, recs = fetch_region(34.0, 39.0, -100.0, -94.0, at_time)
     out = os.path.join(_OUTPUT_DIR, "openmeteo_thermal_map.png")
