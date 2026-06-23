@@ -11,8 +11,9 @@ from pymavlink import mavutil
 SOARING_AUX_FUNC = 88  # RCx_OPTION value for "Soaring Enable"
 
 
-def connect(conn_str):
-    m = mavutil.mavlink_connection(conn_str)
+def connect(conn_str, baud=115200):
+    # baud is used only for serial devices (e.g. /dev/serial0); ignored for tcp/udp.
+    m = mavutil.mavlink_connection(conn_str, baud=baud)
     m.wait_heartbeat()
     m.mav.request_data_stream_send(m.target_system, m.target_component,
                                    mavutil.mavlink.MAV_DATA_STREAM_ALL, 5, 1)
