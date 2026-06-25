@@ -28,6 +28,8 @@ import time
 
 from pymavlink import mavutil
 
+from companion.mav import set_soaring_switch, set_mode
+
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -106,27 +108,6 @@ def get_param(m, name):
             return msg.param_value
     return None
 
-
-SOARING_AUX_FUNC = 88  # RCx_OPTION value for "Soaring Enable"
-
-
-def set_soaring_switch(m, level):
-    """Invoke the SOARING aux function directly (0=LOW/disabled,
-    1=MIDDLE/manual, 2=HIGH/auto) via MAV_CMD_DO_AUX_FUNCTION.
-
-    This bypasses RC-channel values: in headless SITL the soaring-enable RC
-    switch boots LOW, latching _pilot_desired_state=SOARING_DISABLED, and a
-    plain RC override never reaches the aux-switch logic. The command does."""
-    m.mav.command_long_send(m.target_system, m.target_component,
-                            mavutil.mavlink.MAV_CMD_DO_AUX_FUNCTION, 0,
-                            SOARING_AUX_FUNC, level, 0, 0, 0, 0, 0)
-
-
-def set_mode(m, mode_name):
-    mapping = m.mode_mapping()
-    if mode_name not in mapping:
-        raise RuntimeError(f"unknown mode {mode_name}; have {list(mapping)}")
-    m.set_mode(mapping[mode_name])
 
 
 def arm(m):

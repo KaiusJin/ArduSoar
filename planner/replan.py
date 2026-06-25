@@ -139,7 +139,8 @@ def main():
     if not route_ll:
         print("No active candidates left after feedback.")
         return
-    print(f"Re-planned from aircraft {report['aircraft']['lat']:.4f},{report['aircraft']['lon']:.4f}"
+    ac = report.get("aircraft") or {}
+    print(f"Re-planned from aircraft {ac.get('lat', '?')},{ac.get('lon', '?')}"
           f"  ->  {len(route_ll)} waypoints:")
     for wp in route_ll:
         print(f"   {wp['seq']:>2}. {wp['lat']:.5f},{wp['lon']:.5f}  W*={wp['w_star']:.1f} p={wp['prob']:.2f}")

@@ -13,6 +13,7 @@ So the strategic layer now runs on real weather: "today is a 2 m/s day, base
 """
 from __future__ import annotations
 
+import json
 import os
 
 import numpy as np
@@ -71,7 +72,6 @@ def build_prior(lat, lon, at_time=None, bounds=(-2000.0, 2000.0, -2000.0, 2000.0
 
 
 def main(lat=43.47, lon=-80.54):
-    import json
     prior = build_prior(lat, lon)
     out = os.path.join(os.path.dirname(__file__), "data",
                        f"soaringmeteo_prior_{lat}_{lon}.json")

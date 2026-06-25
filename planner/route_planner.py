@@ -22,21 +22,8 @@ import json
 import math
 import os
 
+from companion.geo import enu_to_latlon, latlon_to_enu
 from navigation.thermal_prior import BeliefMap, CandidatePoint
-
-_R_EARTH = 6378137.0  # WGS84, m
-
-
-def enu_to_latlon(origin_lat, origin_lon, east_m, north_m):
-    dlat = math.degrees(north_m / _R_EARTH)
-    dlon = math.degrees(east_m / (_R_EARTH * math.cos(math.radians(origin_lat))))
-    return origin_lat + dlat, origin_lon + dlon
-
-
-def latlon_to_enu(origin_lat, origin_lon, lat, lon):
-    north = math.radians(lat - origin_lat) * _R_EARTH
-    east = math.radians(lon - origin_lon) * _R_EARTH * math.cos(math.radians(origin_lat))
-    return east, north
 
 
 def _clamp(v, lo, hi):
@@ -101,7 +88,7 @@ def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
     candidate toward the goal, mark it used, step there, repeat.
     """
     cands = [CandidatePoint(x=c[0], y=c[1], prob=c[3], strength_guess=c[2])
-             for c in prior["candidates"]]
+             for c in prior["candidates"] if len(c) >= 4]
     if not cands:                          # weak/empty forecast: nothing to route to
         return [], (goal_enu or start_enu)
     belief = BeliefMap(cands)
