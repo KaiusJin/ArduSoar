@@ -83,7 +83,23 @@ python -m pytest tests                  # unit tests (59 passing)
 - ☐ Hardware bring-up (Matek F405-Wing-V2 + ASPD-4525 + Pi 5); see [`docs/`](docs/).
 - ☐ Multi-hotspot cross-country under live weather.
 
-## Attribution
-This project is derived from the original AutoGlide repository by Sahil Kale. The original author is not affiliated with, endorsing, collaborating on, or currently involved in this derivative project.
+## License
 
-Original repository: [AutoGlide](https://github.com/sahil-kale/autoglide)
+This project is licensed under the
+[Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/)
+license. See [`LICENSE`](LICENSE) for the full terms.
+
+## Attribution
+
+This project is a derivative of **[AutoGlide](https://github.com/sahil-kale/autoglide)**
+by **Sahil Kale**, licensed under
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+
+Changes made in this derivative:
+- Replaced the custom flight controller with ArduPilot / ArduSoar (no longer building a proprietary FC).
+- Added a strategic thermal-prediction layer: real-weather prior (Open-Meteo W\*, SoaringMeteo GFS,
+  terrain-trigger), ground path planner, MAVLink companion, and vision-feedback re-planner.
+- Added SITL end-to-end validation, Pi 5 serial deployment, unit tests, and failsafe parameter sets.
+- Retained the original simulation / estimator core for offline algorithm development.
+
+The original author is not affiliated with, endorsing, or currently involved in this derivative project.
