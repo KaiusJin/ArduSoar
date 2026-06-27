@@ -81,35 +81,41 @@ def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
 
 
 def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
-               max_waypoints=8, arrive_m=120.0):
+               max_waypoints=8, arrive_m=120.0, airspeed=12.0, lookahead=2):
     """Return an ordered list of waypoints (dicts) from a weather prior.
 
-    Each waypoint: {seq, enu_x, enu_y, w_star, prob}. Greedy: best reachable
-    candidate toward the goal, mark it used, step there, repeat.
+    Each waypoint: {seq, enu_x, enu_y, w_star, prob}.
+
+    airspeed: cruise airspeed in m/s (must match AIRSPEED_CRUISE on the FC).
+    lookahead: 1 = greedy single-step; >=2 = depth-N chain scoring for flying far.
+    Wind is read from prior["wind"] and used to correct glide range and scoring.
     """
     cands = [CandidatePoint(x=c[0], y=c[1], prob=c[3], strength_guess=c[2])
              for c in prior["candidates"] if len(c) >= 4]
-    if not cands:                          # weak/empty forecast: nothing to route to
+    if not cands:
         return [], (goal_enu or start_enu)
+    wind = tuple(prior.get("wind") or [0.0, 0.0])
     belief = BeliefMap(cands)
     if goal_enu is None:
-        # default goal = the strongest candidate (prob x strength). For a long
-        # cross-country route, pass an explicit far --goal-lat/--goal-lon and the
-        # chain bridges to it through intermediate thermals.
         g = max(cands, key=lambda c: c.prob * c.strength_guess)
         goal_enu = (g.x, g.y)
 
     route = []
     cur = start_enu
     for seq in range(max_waypoints):
-        target = belief.best_target(cur[0], cur[1], plan_alt, goal_enu)
+        if lookahead >= 2:
+            target = belief.plan_chain(cur[0], cur[1], plan_alt, goal_enu, plan_alt,
+                                       wind=wind, airspeed=airspeed)
+        else:
+            target = belief.best_target(cur[0], cur[1], plan_alt, goal_enu,
+                                        wind=wind, airspeed=airspeed)
         if target is None:
             break
         route.append({"seq": seq + 1, "enu_x": round(target.x, 1),
                       "enu_y": round(target.y, 1),
                       "w_star": round(target.strength_guess, 2),
                       "prob": round(target.prob, 2)})
-        target.confirmed = True            # mark used so we don't re-pick it
+        target.confirmed = True
         cur = (target.x, target.y)
         if math.hypot(goal_enu[0] - cur[0], goal_enu[1] - cur[1]) <= arrive_m:
             break
