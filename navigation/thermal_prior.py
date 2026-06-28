@@ -168,10 +168,11 @@ class BeliefMap:
     def drift(self, wind, dt: float) -> None:
         """Advect the (unconfirmed) candidates downwind so they track the
         drifting thermals — the map snapshot is only valid at upload time."""
+        wx, wy = (wind.wx, wind.wy) if hasattr(wind, "wx") else (wind[0], wind[1])
         for c in self.candidates:
             if not c.confirmed:
-                c.x += wind.wx * dt
-                c.y += wind.wy * dt
+                c.x += wx * dt
+                c.y += wy * dt
 
     def decay(self, dt: float, tau: float = 600.0) -> None:
         """The uploaded map ages: unconfirmed candidates get less trustworthy as
