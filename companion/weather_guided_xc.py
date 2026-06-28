@@ -58,22 +58,30 @@ def main():
              for c in prior["candidates"]]
     loc = prior.get("location", {})
     origin = home if args.origin == "home" else (loc["lat"], loc["lon"])
+    wind = tuple(prior.get("wind") or [0.0, 0.0])
     belief = BeliefMap(cands)
     goal = max(cands, key=lambda c: c.prob * c.strength_guess)
     goal_xy = (goal.x, goal.y)
     log(f"Origin ({args.origin}): {origin[0]:.6f},{origin[1]:.6f} | {len(cands)} candidates | "
-        f"goal ENU ({goal.x:.0f},{goal.y:.0f})")
+        f"goal ENU ({goal.x:.0f},{goal.y:.0f}) | wind {wind}")
 
     mav.set_param(m, "SOAR_VSPEED", 0.55)
     mav.set_param(m, "SOAR_ENABLE", 1)
 
     cur = (0.0, 0.0)          # companion's ENU position (starts at home)
-    plan_alt = args.cruise_alt
+    cur_alt = args.cruise_alt  # updated from live MAVLink before each hop
     armed = False
     hops = []
 
     for hop in range(args.max_hops):
-        target = belief.best_target(cur[0], cur[1], 1500.0, goal_xy)  # box fits one glide
+        # refresh altitude from FC before planning each hop
+        pos_now = mav.vehicle_position(m, timeout=2)
+        if pos_now is not None:
+            cur_alt = pos_now[2]
+            cur = geo.latlon_to_enu(origin[0], origin[1], pos_now[0], pos_now[1])
+
+        target = belief.plan_chain(cur[0], cur[1], cur_alt, goal_xy, cur_alt,
+                                   wind=wind, airspeed=12.0)
         if target is None:
             log("No more reachable candidates")
             break
@@ -141,16 +149,26 @@ def main():
             if saw_thermal and entry_alt is not None and alt - entry_alt >= args.confirm_climb:
                 break
 
+        thermal_time = time.time() - ts
         climbed = (peak - entry_alt) if entry_alt is not None else 0.0
         if saw_thermal and climbed >= args.confirm_climb:
-            belief.confirm(target, target.x, target.y, target.strength_guess)
-            log(f"  CONFIRMED: climbed +{climbed:.0f} m (now {peak:.0f} m), prob->{target.prob:.2f}")
+            # estimate actual W* from observed climb / time circling
+            measured_wstar = (climbed / thermal_time) if thermal_time > 5 else target.strength_guess
+            belief.confirm(target, target.x, target.y, measured_wstar)
+            log(f"  CONFIRMED: climbed +{climbed:.0f} m in {thermal_time:.0f}s "
+                f"W*_measured={measured_wstar:.2f} prob->{target.prob:.2f}")
             hops.append((hop + 1, "CONFIRMED", climbed))
         else:
             belief.disconfirm(target)
             log(f"  disconfirmed (no usable lift), prob->{target.prob:.2f}")
             hops.append((hop + 1, "disconfirmed", climbed))
-        cur = (target.x, target.y)
+        # update position from real GPS if available, else fall back to target coords
+        pos_after = mav.vehicle_position(m, timeout=2)
+        if pos_after is not None:
+            cur = geo.latlon_to_enu(origin[0], origin[1], pos_after[0], pos_after[1])
+            cur_alt = pos_after[2]
+        else:
+            cur = (target.x, target.y)
 
     log("=" * 60)
     confirmed = [h for h in hops if h[1] == "CONFIRMED"]
