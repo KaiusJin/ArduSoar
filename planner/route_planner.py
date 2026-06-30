@@ -219,13 +219,19 @@ def _load_prior(args):
     if args.source == "openmeteo":
         from weather.openmeteo_prior import build_prior
         return build_prior(args.lat, args.lon)
-    raise SystemExit("provide --prior FILE or --source {soaringmeteo,openmeteo} --lat --lon")
+    if args.source == "terrain":
+        from weather.terrain_prior import build_prior
+        return build_prior(args.lat, args.lon)
+    raise SystemExit("provide --prior FILE or --source {soaringmeteo,openmeteo,terrain} --lat --lon")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prior", help="a prior JSON file (overrides --source)")
-    ap.add_argument("--source", choices=["soaringmeteo", "openmeteo"], default="soaringmeteo")
+    ap.add_argument("--source", choices=["soaringmeteo", "openmeteo", "terrain"],
+                    default="terrain",
+                    help="terrain: DEM-based hotspots (best placement, needs internet for DEM + Open-Meteo); "
+                         "openmeteo/soaringmeteo: random placement within regional W* bounds")
     ap.add_argument("--lat", type=float, default=43.47)
     ap.add_argument("--lon", type=float, default=-80.54)
     ap.add_argument("--region-km", type=float, default=None,
