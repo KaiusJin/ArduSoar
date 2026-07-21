@@ -128,7 +128,7 @@ class BeliefMap:
         """Single-step: pick the best reachable candidate toward the goal."""
         if plan_alt is None:
             plan_alt = altitude + max(reserve, 80.0)
-        usable = max(0.0, altitude - reserve)
+        usable = max(0.0, plan_alt - reserve)   # reachability uses thermal ceiling
         d_goal_now = math.hypot(goal[0] - x, goal[1] - y)
         reach = self._reachable(x, y, usable, glide_ratio, wind, airspeed)
         if not reach:
@@ -149,7 +149,7 @@ class BeliefMap:
         is discounted by `discount`. Scoring uses Q_ij (prob × energy rate),
         so headwind is embedded in transit time — not a separate multiplier.
         """
-        usable = max(0.0, altitude - reserve)
+        usable = max(0.0, plan_alt - reserve)  # reachability uses thermal ceiling
         d_goal_now = math.hypot(goal[0] - x, goal[1] - y)
         reach = self._reachable(x, y, usable, glide_ratio, wind, airspeed)
         if not reach:
@@ -161,16 +161,18 @@ class BeliefMap:
             return max(pool, key=lambda c: self._score(
                 c, (x, y), altitude, plan_alt, wind, airspeed))
 
+        # After visiting a thermal, aircraft is back at plan_alt; score next step
+        # 200 m below ceiling so Q_ij differentiates thermals by strength.
+        next_alt = max(plan_alt - 200.0, 0.0)
         best_c, best_total = None, -1e9
         for c in pool:
             s1 = self._score(c, (x, y), altitude, plan_alt, wind, airspeed)
             c.confirmed = True
-            nxt = self.plan_chain(c.x, c.y, plan_alt, goal, plan_alt,
+            nxt = self.plan_chain(c.x, c.y, next_alt, goal, plan_alt,
                                   glide_ratio, reserve, wind, airspeed,
                                   depth - 1, discount)
             c.confirmed = False
-            # after first thermal, we're back at plan_alt
-            s2 = (self._score(nxt, (c.x, c.y), plan_alt, plan_alt, wind, airspeed)
+            s2 = (self._score(nxt, (c.x, c.y), next_alt, plan_alt, wind, airspeed)
                   if nxt else 0.0)
             total = s1 + discount * s2
             if total > best_total:

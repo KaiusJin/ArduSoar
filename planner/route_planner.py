@@ -104,13 +104,17 @@ def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
 
     route = []
     cur = start_enu
+    # Score thermals as if the aircraft is 200 m below the thermal ceiling.
+    # plan_alt is the ceiling (reachability); scoring_alt sets Q_ij's altitude gap.
+    scoring_alt = max(plan_alt - 200.0, 0.0)
     while len(route) < max_waypoints:
         if lookahead >= 2:
-            target = belief.plan_chain(cur[0], cur[1], plan_alt, goal_enu, plan_alt,
+            target = belief.plan_chain(cur[0], cur[1], scoring_alt, goal_enu, plan_alt,
                                        wind=wind, airspeed=airspeed)
         else:
-            target = belief.best_target(cur[0], cur[1], plan_alt, goal_enu,
-                                        wind=wind, airspeed=airspeed)
+            target = belief.best_target(cur[0], cur[1], scoring_alt, goal_enu,
+                                        wind=wind, airspeed=airspeed,
+                                        plan_alt=plan_alt)
         if target is None:
             break
         if energy is not None and not energy.affordable(target.x, target.y, plan_alt):
