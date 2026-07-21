@@ -74,17 +74,21 @@ LIVE["route"] = _load_route(_ARGS.route)
 
 # ── MAVLink reader thread ──────────────────────────────────────────────────
 def _mavlink_thread():
-    print(f"[live] connecting {_ARGS.conn} …", flush=True)
-    try:
-        m = mavutil.mavlink_connection(_ARGS.conn, baud=_ARGS.baud)
-        m.wait_heartbeat(timeout=60)
-    except Exception as e:
-        print(f"[live] connection failed: {e}", flush=True)
-        return
+    while True:
+        print(f"[live] connecting {_ARGS.conn} …", flush=True)
+        try:
+            m = mavutil.mavlink_connection(_ARGS.conn, baud=_ARGS.baud)
+            m.wait_heartbeat(timeout=10)
+        except Exception as e:
+            print(f"[live] connection failed: {e}  retrying in 5 s", flush=True)
+            with _LOCK:
+                LIVE["connected"] = False
+            time.sleep(5)
+            continue
 
-    with _LOCK:
-        LIVE["connected"] = True
-    print("[live] MAVLink connected", flush=True)
+        with _LOCK:
+            LIVE["connected"] = True
+        print("[live] MAVLink connected", flush=True)
 
     # request a position+status stream at 2 Hz
     m.mav.request_data_stream_send(
@@ -100,7 +104,9 @@ def _mavlink_thread():
         except Exception:
             with _LOCK:
                 LIVE["connected"] = False
-            break
+            print("[live] MAVLink disconnected, retrying …", flush=True)
+            time.sleep(5)
+            break  # breaks inner loop → outer while True reconnects
         if msg is None:
             continue
         t = msg.get_type()
@@ -157,11 +163,12 @@ app = Dash(__name__, title="ArduSoar Live")
 
 MODE_COLOR = {
     "AUTO":    "#185FA5",
-    "THERMAL": "#1D9E75",
+    "LOITER":  "#1D9E75",   # ArduSoar thermaling mode
+    "THERMAL": "#1D9E75",   # fallback alias
     "FBWB":    "#BA7517",
+    "CRUISE":  "#BA7517",
     "RTL":     "#C0392B",
     "MANUAL":  "#888",
-    "CRUISE":  "#555",
 }
 CAND_COLORS = ["#B4B2A9", "#185FA5", "#BA7517", "#1D9E75"]  # low→high prob
 
@@ -365,9 +372,8 @@ def _tick(_):
             x=list(ts), y=list(alts), mode="lines", name="altitude",
             line=dict(color="#185FA5", width=2),
             fill="tozeroy", fillcolor="rgba(24,95,165,0.12)"))
-        # THERMAL mode shading
-        mode_now = mode
-        if mode_now == "THERMAL":
+        # shade altitude chart during thermaling (LOITER = ArduSoar circling)
+        if mode in ("LOITER", "THERMAL"):
             fig_alt.add_hrect(y0=alt_now - 20, y1=alt_now + 80,
                                fillcolor="rgba(29,158,117,0.08)",
                                line_width=0)

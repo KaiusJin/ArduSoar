@@ -23,7 +23,7 @@ import math
 import os
 
 from companion.geo import enu_to_latlon, latlon_to_enu
-from navigation.thermal_prior import BeliefMap, CandidatePoint
+from navigation.thermal_prior import BeliefMap, CandidatePoint, prob_gaussian
 
 
 def _clamp(v, lo, hi):
@@ -59,7 +59,7 @@ def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
         if w < w_min:
             continue
         e, n = latlon_to_enu(lat, lon, r["lat"], r["lon"])
-        p = _clamp(0.4 + 0.1 * w, 0.2, 0.9)
+        p = prob_gaussian(w)   # 1−Φ((w_z_min−W*)/σ); AutoSOAR §3.4.1
         cands.append([round(e, 1), round(n, 1), round(w, 2), round(p, 2)])
         winds.append((r.get("wind_u_kmh", 0.0), r.get("wind_v_kmh", 0.0)))
         if r.get("soaring_layer_top_m"):
