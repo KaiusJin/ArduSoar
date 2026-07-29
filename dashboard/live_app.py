@@ -90,54 +90,54 @@ def _mavlink_thread():
             LIVE["connected"] = True
         print("[live] MAVLink connected", flush=True)
 
-    # request a position+status stream at 2 Hz
-    m.mav.request_data_stream_send(
-        m.target_system, m.target_component,
-        mavutil.mavlink.MAV_DATA_STREAM_ALL, 2, 1)
+        # request a position+status stream at 2 Hz
+        m.mav.request_data_stream_send(
+            m.target_system, m.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_ALL, 2, 1)
 
-    while True:
-        try:
-            msg = m.recv_match(
-                type=["HEARTBEAT", "GLOBAL_POSITION_INT",
-                      "SYS_STATUS", "HOME_POSITION"],
-                blocking=True, timeout=3)
-        except Exception:
+        while True:
+            try:
+                msg = m.recv_match(
+                    type=["HEARTBEAT", "GLOBAL_POSITION_INT",
+                          "SYS_STATUS", "HOME_POSITION"],
+                    blocking=True, timeout=3)
+            except Exception:
+                with _LOCK:
+                    LIVE["connected"] = False
+                print("[live] MAVLink disconnected, retrying …", flush=True)
+                time.sleep(5)
+                break  # breaks inner loop → outer while True reconnects
+            if msg is None:
+                continue
+            t = msg.get_type()
             with _LOCK:
-                LIVE["connected"] = False
-            print("[live] MAVLink disconnected, retrying …", flush=True)
-            time.sleep(5)
-            break  # breaks inner loop → outer while True reconnects
-        if msg is None:
-            continue
-        t = msg.get_type()
-        with _LOCK:
-            if t == "HOME_POSITION" and abs(msg.latitude) > 1_000_000:
-                LIVE["home"] = (msg.latitude / 1e7, msg.longitude / 1e7)
+                if t == "HOME_POSITION" and abs(msg.latitude) > 1_000_000:
+                    LIVE["home"] = (msg.latitude / 1e7, msg.longitude / 1e7)
 
-            elif t == "GLOBAL_POSITION_INT":
-                lat = msg.lat / 1e7
-                lon = msg.lon / 1e7
-                alt = msg.relative_alt / 1000.0
-                if LIVE["home"] is None and abs(msg.lat) > 1_000_000:
-                    LIVE["home"] = (lat, lon)
-                home = LIVE["home"] or (lat, lon)
-                ex, ny = latlon_to_enu(home[0], home[1], lat, lon)
-                LIVE["trail"].append((ex, ny))
-                if len(LIVE["trail"]) > TRAIL_MAX:
-                    LIVE["trail"] = LIVE["trail"][-TRAIL_MAX:]
-                t_rel = time.time() - LIVE["t0"]
-                LIVE["alt_hist"].append((t_rel, alt))
-                cutoff = t_rel - ALT_WINDOW
-                LIVE["alt_hist"] = [(s, a) for s, a in LIVE["alt_hist"] if s >= cutoff]
+                elif t == "GLOBAL_POSITION_INT":
+                    lat = msg.lat / 1e7
+                    lon = msg.lon / 1e7
+                    alt = msg.relative_alt / 1000.0
+                    if LIVE["home"] is None and abs(msg.lat) > 1_000_000:
+                        LIVE["home"] = (lat, lon)
+                    home = LIVE["home"] or (lat, lon)
+                    ex, ny = latlon_to_enu(home[0], home[1], lat, lon)
+                    LIVE["trail"].append((ex, ny))
+                    if len(LIVE["trail"]) > TRAIL_MAX:
+                        LIVE["trail"] = LIVE["trail"][-TRAIL_MAX:]
+                    t_rel = time.time() - LIVE["t0"]
+                    LIVE["alt_hist"].append((t_rel, alt))
+                    cutoff = t_rel - ALT_WINDOW
+                    LIVE["alt_hist"] = [(s, a) for s, a in LIVE["alt_hist"] if s >= cutoff]
 
-            elif t == "HEARTBEAT":
-                LIVE["mode"]  = m.flightmode
-                LIVE["armed"] = bool(
-                    msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+                elif t == "HEARTBEAT":
+                    LIVE["mode"]  = m.flightmode
+                    LIVE["armed"] = bool(
+                        msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
-            elif t == "SYS_STATUS":
-                if msg.voltage_battery != 65535:
-                    LIVE["battery_v"] = msg.voltage_battery / 1000.0
+                elif t == "SYS_STATUS":
+                    if msg.voltage_battery != 65535:
+                        LIVE["battery_v"] = msg.voltage_battery / 1000.0
 
 
 # ── Pi5 status JSON poller ─────────────────────────────────────────────────

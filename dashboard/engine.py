@@ -74,7 +74,7 @@ class Params:
     sensor_noise: bool = False            # clean sensors by default
     land_radius: float = 120.0
     # optional weather-derived prior: list of (x, y, strength, prob). When set, the
-    # glider's map comes from this forecast instead of make_uploaded_map (no cheat).
+    # The glider's map comes from the forecast; simulation truth remains synthetic.
     external_prior: tuple = None
 
     @classmethod

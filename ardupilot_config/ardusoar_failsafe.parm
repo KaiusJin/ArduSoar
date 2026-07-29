@@ -9,7 +9,7 @@
 # ---- Geofence ----------------------------------------------------------------
 FENCE_ENABLE     1
 FENCE_TYPE       3        # bitmask: 1=max-alt + 2=circle  (add 4 for a polygon)
-FENCE_ALT_MAX    300      # [SITE] AGL ceiling — set to your airspace limit; align with SOAR_ALT_MAX
+FENCE_ALT_MAX    300      # [SITE] ceiling relative to home, not terrain AGL
 FENCE_RADIUS     1000     # [SITE] max metres from home
 FENCE_ACTION     1        # 1 = RTL or Land   (0=report only)
 FENCE_MARGIN     20

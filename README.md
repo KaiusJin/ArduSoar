@@ -1,16 +1,17 @@
 # ArduSoar
 
 Autonomous thermal soaring built on **ArduPilot's ArduSoar controller**
-([docs](https://ardupilot.org/plane/docs/soaring.html)). See [`proposal.md`](proposal.md)
-for the full direction. (Originally inspired by `sahil-kale/autoglide`; see
-Attribution below.)
+([docs](https://ardupilot.org/plane/docs/soaring.html)). See
+[`docs/tasks.md`](docs/tasks.md) for the current validation plan. (Originally
+inspired by `sahil-kale/autoglide`; see Attribution below.)
 
 ## Direction
 
-We no longer build our own flight controller. ArduPilot's ArduSoar already solves
-the **tactical** problem brilliantly — once the aircraft is in rising air, centre
-the thermal and climb. What it can't do is know **where today's thermals are**.
-That **strategic** problem is our differentiator, and it's driven by real weather.
+We no longer build our own flight controller. ArduPilot's ArduSoar handles the
+**tactical** problem — once the aircraft is in rising air, centre the thermal and
+climb. This repository researches the **strategic** layer: convert real
+weather/terrain inputs into uncertain lift-opportunity candidates and route toward
+them. Exact thermal-core prediction is not yet validated.
 
 ```
  Strategic layer (this repo)              Tactical layer (ArduSoar, onboard)
@@ -63,7 +64,6 @@ thermal:    w(r)   = W_0 * exp(-r^2 / R_th^2)
 
 ```bash
 sitl/run_demo.sh                 # reproduce ArduSoar thermalling in pure software
-companion/run_companion_demo.sh  # weather hotspot -> fly there -> hand off to ArduSoar
 ```
 
 **Weather pipeline** and **baseline simulator**:
@@ -73,13 +73,16 @@ pip install -r requirements.txt
 python -m weather.openmeteo_thermal     # Deardorff W* thermal prior from Open-Meteo
 python main.py                          # baseline single-thermal sim + plots
 python cross_country.py                 # baseline multi-thermal cross-country
-python -m pytest tests                  # unit tests (59 passing)
+python -m pytest tests                  # unit + optional live-integration tests
 ```
 
 ## Status
 
-- ✅ **Milestone 1** — ArduSoar thermalling reproduced in SITL (`sitl/`).
-- ✅ **Step 3** — weather-guided companion: prior → hotspot → handoff, confirmed in SITL (`companion/`).
+- △ **Milestone 1** — ArduSoar SITL driver and historical integration figure exist;
+  retain fresh telemetry before treating it as current acceptance evidence (`sitl/`).
+- △ **Step 3** — weather → planner → mission is offline-tested; the complete
+  companion-to-ArduSoar handoff is not yet validated on the current checkout.
+- ☐ Independent hidden-truth SITL evaluation; see [`docs/tasks.md`](docs/tasks.md).
 - ☐ Hardware bring-up (Matek F405-Wing-V2 + ASPD-4525 + Pi 5); see [`docs/`](docs/).
 - ☐ Multi-hotspot cross-country under live weather.
 

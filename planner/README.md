@@ -16,11 +16,10 @@ Greedy strategic chain reusing `navigation.thermal_prior.BeliefMap` (same scorin
 as the dashboard and companion): from home, pick the best reachable candidate
 toward the goal, step to it, repeat until the goal vicinity or candidates run out.
 
-- **Local box** (`--prior` or `--source ... --lat --lon`): candidates are a sampled
-  field in a small ±2 km box → usually one best thermal (you can glide anywhere
-  locally, so a single waypoint is the right answer).
-- **Cross-country** (`--region-km N`): candidates are the **real W\* grid cells**
-  over an N-km box → a genuine multi-waypoint route that hops thermal-to-thermal.
+- **Local box** (`--prior` or `--source ... --lat --lon`): weather-derived bulk
+  conditions are assigned to synthetic candidate coordinates in a small box.
+- **Cross-country** (`--region-km N`): candidates are forecast-model W\* sample
+  points over an N-km box. They are route opportunities, not observed thermal cores.
 
 ## Run
 
@@ -86,9 +85,9 @@ python -m planner.replan --prior <prior.json> --vision <report.json>
 python -m planner.replan --prior <prior.json> --demo     # synthesize a sample report
 ```
 
-## Validated in SITL
+## Validation status
 
-`sitl/run_route_demo.sh` plans a SITL-local route and flies that exact `.waypoints`
-mission: it uploads to ArduPilot cleanly, flies the planned route, and ArduSoar
-engages a thermal at the planned hotspot — proving the path we hand off is a valid,
-flyable ArduPilot mission.
+Route serialization has offline tests. The old route demo used a candidate aligned
+with a known SITL thermal and has been removed; it was an integration fixture, not
+independent planner validation. The replacement independent-truth evaluation is
+planned in [`docs/tasks.md`](../docs/tasks.md).

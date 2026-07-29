@@ -27,10 +27,10 @@ python weather_prior.py            # A -> B -> endurance flight on the forecast 
 | thermal **count / density** | how strongly the day is working |
 | candidate **confidence** | lower under heavy cloud cover |
 
-The candidate **locations** are a sampled forecast consistent with those bulk
-parameters — **not** the simulator's ground truth. That's the point: the map is an
-independent guess, so it's realistically imperfect, and the glider's onboard
-estimator still has to find the actual lift.
+The local candidate **locations are synthetic random samples** inside the configured
+box. The forecast supplies bulk strength/count/wind, not thermal-core coordinates.
+Regional modes use model sample coordinates, which are also not observations of
+discrete thermal cores. The simulator has separate synthetic truth.
 
 ## The "data link"
 

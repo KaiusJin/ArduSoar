@@ -10,10 +10,9 @@ meteorology:
   * DRIFT (wind)      ~ boundary-layer wind, as a vector the air blows toward
   * DENSITY / COUNT   ~ how strongly the day is working
 
-The candidate LOCATIONS are a sampled forecast (a stochastic field consistent with
-those bulk parameters) — NOT the simulator's ground truth. That is the whole point:
-the map is now an independent guess from real weather, so it is realistically
-imperfect rather than copied from the answer.
+The candidate LOCATIONS are synthetic random samples conditioned on those bulk
+parameters; the weather source does not provide thermal-core coordinates. They
+are independent of the simulator's separate synthetic ground truth.
 
 Output is exactly the (x, y, strength, prob) list that build_prior() consumes, plus
 wind + cloud_base, written to prior_latest.json (the "data link" the glider reloads).
@@ -67,7 +66,7 @@ def make_prior(weather: dict, bounds=(-2000.0, 2000.0, -2000.0, 2000.0),
     n = int(_clamp(6 + rad / 110.0 + cape / 130.0, 6, 26))
     base_prob = _clamp(0.75 - cloud / 250.0, 0.2, 0.85)
 
-    # sampled forecast locations (NOT the sim truth)
+    # synthetic candidate locations conditioned on forecast bulk properties
     rng = np.random.default_rng(seed)
     x0, x1, y0, y1 = bounds
     cands = []

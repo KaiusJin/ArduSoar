@@ -41,7 +41,8 @@ clean "edge / tactical layer" seam for a future cloud split.
 ## Fly today's real forecast
 
 The **🌤 use weather** button fetches a real forecast for the (lat, lon) and flies
-it in sim — the glider's map *is* the forecast (no cheat). Pick the source:
+it in a forecast-conditioned synthetic simulation. This demonstrates data flow and
+strategy behavior; it is not independent validation of the forecast. Pick the source:
 
 - **Open-Meteo (rad/CAPE)** — bulk params → strength heuristic (`weather/processor.py`)
 - **Open-Meteo W\* (Deardorff)** — convective velocity (`weather/openmeteo_prior.py`)

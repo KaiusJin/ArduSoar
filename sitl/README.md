@@ -8,25 +8,23 @@ companion will use to push GUIDED waypoints to the real aircraft.
 
 ![ArduSoar in SITL](soaring_demo.png)
 
-## Weather-truth: real weather flown end-to-end
+## Forecast-conditioned SITL integration demo
 
-`run_weather_truth_demo.sh` connects the two halves that were previously tested
-apart — **real weather → route** (planner) and **aircraft catches lift** (SITL):
+`run_weather_truth_demo.sh` connects **real weather → route** with an ArduPilot
+mission in SITL:
 
-![weather-truth](weather_truth_demo.png)
-
-It plans a route from **real Open-Meteo W\***, places simulated thermals **at those
-forecast positions** (a patched SITL scenario, see below), starts SITL at the first
-hotspot, and flies the mission. ArduSoar then climbs at **every forecast hotspot**:
+It plans a route from Open-Meteo W\*, then deliberately places simulated thermals
+at the selected route points. This checks the planner-to-mission-to-ArduSoar
+integration, but cannot validate whether the forecast predicts real thermal cores:
 
 ```
 hotspot 1 (43.335,-80.490, W*=2.18): LIFT FOUND, +206 m
 hotspot 2 (43.335,-80.310, W*=2.39): LIFT FOUND, +224 m
 hotspot 3 (43.245,-80.220, W*=2.69): LIFT FOUND, +248 m
--> 3/3 forecast hotspots produced real lift in the air
+-> 3/3 route points intersected the injected SITL lift
 ```
 
-This is the closest-to-real validation before hardware. (The sawtooth between
+This is a circular integration fixture, not atmospheric validation. (The sawtooth between
 thermals in the plot is the powered glider motoring along low when the next
 forecast thermal is farther than its glide range — a spacing/ceiling tuning knob.)
 
@@ -38,7 +36,6 @@ so thermals can be placed at arbitrary (forecast) positions. Apply with
 ```bash
 sitl/run_weather_truth_demo.sh [lat] [lon]    # plan from real weather + fly it
 sitl/plot_weather_truth.py                     # render weather_truth_demo.png
-sitl/run_route_demo.sh                         # validate a planner route flies (single local thermal)
 sitl/run_terrain_demo.sh [lat] [lon]           # terrain-trigger hotspots -> thermals there -> fly
 ```
 
@@ -46,7 +43,8 @@ sitl/run_terrain_demo.sh [lat] [lon]           # terrain-trigger hotspots -> the
 
 The plane cruises an AUTO mission, ArduSoar detects rising air, switches to
 **THERMAL** (LOITER) circling (shaded), climbs toward `SOAR_ALT_MAX`, then
-returns to AUTO — exactly the stock ArduSoar behaviour, validated end-to-end.
+returns to AUTO. Retain telemetry and pin the ArduPilot build when re-running this
+as an acceptance test.
 
 ## One-time setup
 

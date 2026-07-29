@@ -113,3 +113,19 @@ def test_write_sitl_thermals_relative_to_first():
     # first thermal at the SITL home (0,0); second 5000 m north (x_north col first)
     assert lines[0].split()[:2] == ["0.0", "0.0"]
     assert abs(float(lines[1].split()[0]) - 5000) < 1
+
+
+def test_output_prefix_is_exact():
+    prior = {"source": "openmeteo-region"}
+    jpath, wpath = rp._output_paths(prior, 43.47, -80.54, "unused", "/tmp/replan")
+    assert jpath == "/tmp/replan.json"
+    assert wpath == "/tmp/replan.waypoints"
+
+
+def test_region_prior_rejects_mislabeled_terrain_source():
+    try:
+        rp.build_region_prior("terrain", 43.47, -80.54, 10)
+    except ValueError as exc:
+        assert "not implemented" in str(exc)
+    else:
+        raise AssertionError("terrain region must not silently use Open-Meteo")

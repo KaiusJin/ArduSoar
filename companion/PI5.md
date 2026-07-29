@@ -22,9 +22,22 @@ Pi is powered by its own buck (per the hardware plan), so do **not** join 5 V:
 
 ## 2. Enable the Pi serial port
 
-`sudo raspi-config` → Interface Options → Serial Port → login shell **No**, hardware
-serial **Yes**. (Equivalently: `enable_uart=1` in `/boot/firmware/config.txt` and
-remove `console=serial0,...` from `cmdline.txt`.) Reboot. The port is `/dev/serial0`.
+On a Pi 5, `/dev/serial0` points to UART10 on the dedicated debug header by
+default; it is **not** the GPIO14/15 UART assumed by the wiring table above. To
+use GPIO14/15, enable a Pi-5 UART overlay such as `dtoverlay=uart0-pi5` in
+`/boot/firmware/config.txt` (check the installed overlay's pins first with
+`dtoverlay -h uart0-pi5`). Also disable the serial login console, leave the UART
+hardware enabled, and reboot.
+
+Before connecting the FC, verify the actual device:
+
+```bash
+ls -l /dev/serial* /dev/ttyAMA*
+readlink -f /dev/serial0
+```
+
+UART0 normally appears as `/dev/ttyAMA0`; pass the device you actually verified
+to `--conn`. All Pi UARTs are 3.3 V. Do not connect a 5 V serial signal.
 
 ## 3. Configure the FC UART (do once, with the param sets)
 
@@ -49,7 +62,7 @@ git clone https://github.com/KaiusJin/ArduSoar.git && cd ArduSoar
 
 ```bash
 # ground copies the planned route over, then on the Pi:
-python3 -m companion.pi5_run --conn /dev/serial0 --baud 921600 --route route.waypoints
+python3 -m companion.pi5_run --conn /dev/ttyAMA0 --baud 921600 --route route.waypoints
 ```
 
 Flow: `pi5_run` uploads the mission, then **the pilot arms via RC** and the FC flies
@@ -60,5 +73,6 @@ is the stub where the Pi's **vision / return-data** will go (fed back to ground
 `planner/replan.py`).
 
 **`--arm` is bench-only** (auto AUTO + arm) — never on a real aircraft; the pilot
-must hold the arm/kill authority via RC. Validated end-to-end against SITL over TCP
-(`--conn tcp:127.0.0.1:5760`); the only change for the real Pi is the serial `--conn`.
+must hold the arm/kill authority via RC. A TCP SITL run does not validate the Pi
+UART, electrical interface, baud stability, power supply, or real FC behavior;
+bench-test those separately before flight.

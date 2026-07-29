@@ -119,7 +119,7 @@ def main():
                 f"LIFT FOUND, climbed +{best:.0f} m")
         else:
             log(f"  hotspot {i+1} ({wp['lat']:.4f},{wp['lon']:.4f}, W*={wp['w_star']}): no lift")
-    log(f"  -> {hit}/{len(wps)} forecast hotspots produced real lift in the air")
+    log(f"  -> {hit}/{len(wps)} route points intersected injected SITL lift")
     log(f"  trace -> {csv_path}")
     log("=" * 64)
     return 0 if hit >= 2 else 1

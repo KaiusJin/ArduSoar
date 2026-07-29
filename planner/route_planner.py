@@ -30,6 +30,15 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def _output_paths(prior, lat, lon, out_dir, out_prefix=None):
+    """Return deterministic JSON/QGC output paths for the CLI."""
+    if out_prefix:
+        return out_prefix + ".json", out_prefix + ".waypoints"
+    tag = f"{prior.get('source', 'route')}_{lat}_{lon}"
+    return (os.path.join(out_dir, f"route_{tag}.json"),
+            os.path.join(out_dir, f"route_{tag}.waypoints"))
+
+
 def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
                        step_km=None):
     """Build a cross-country prior whose candidates are REAL W* grid cells over a
@@ -46,20 +55,24 @@ def build_region_prior(source, lat, lon, size_km, at_time=None, w_min=0.8,
         from weather.soaringmeteo import fetch_region
         meta, recs = fetch_region(lat - half_lat, lat + half_lat,
                                   lon - half_lon, lon + half_lon)
-    else:
+    elif source == "openmeteo":
         import datetime as _dt
         from weather.openmeteo_thermal import fetch_region, GFS_RES
         at_time = at_time or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT18:00:00Z")
         step_deg = (step_km / 111.0) if step_km else GFS_RES
         meta, recs = fetch_region(lat - half_lat, lat + half_lat,
                                   lon - half_lon, lon + half_lon, at_time, step_deg=step_deg)
+    else:
+        raise ValueError(
+            "regional terrain priors are not implemented; use --source terrain "
+            "without --region-km, or select openmeteo/soaringmeteo")
     cands, winds, base = [], [], []
     for r in recs:
         w = r["thermal_velocity_ms"]
         if w < w_min:
             continue
         e, n = latlon_to_enu(lat, lon, r["lat"], r["lon"])
-        p = prob_gaussian(w)   # 1−Φ((w_z_min−W*)/σ); AutoSOAR §3.4.1
+        p = prob_gaussian(w)   # fixed-uncertainty forecast heuristic; see function docs
         cands.append([round(e, 1), round(n, 1), round(w, 2), round(p, 2)])
         winds.append((r.get("wind_u_kmh", 0.0), r.get("wind_v_kmh", 0.0)))
         if r.get("soaring_layer_top_m"):
@@ -105,7 +118,7 @@ def plan_route(prior, goal_enu=None, start_enu=(0.0, 0.0), plan_alt=1500.0,
     route = []
     cur = start_enu
     # Score thermals as if the aircraft is 200 m below the thermal ceiling.
-    # plan_alt is the ceiling (reachability); scoring_alt sets Q_ij's altitude gap.
+    # plan_alt is the ceiling; scoring_alt sets the equivalent-lift utility gap.
     scoring_alt = max(plan_alt - 200.0, 0.0)
     while len(route) < max_waypoints:
         if lookahead >= 2:
@@ -247,7 +260,7 @@ def main():
     ap.add_argument("--lat", type=float, default=43.47)
     ap.add_argument("--lon", type=float, default=-80.54)
     ap.add_argument("--region-km", type=float, default=None,
-                    help="plan cross-country over a real W* grid of this size (km) instead of a local box")
+                    help="plan over forecast-model W* sample points in a region of this size (km)")
     ap.add_argument("--region-step-km", type=float, default=None,
                     help="Open-Meteo sampling step (km) within the region (default: native ~28 km grid)")
     ap.add_argument("--w-min", type=float, default=0.8, help="min W* (m/s) for a region cell to be a candidate")
@@ -268,6 +281,8 @@ def main():
     ap.add_argument("--motor-power-w", type=float, default=600.0)
     ap.add_argument("--reserve-wh", type=float, default=8.0)
     ap.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "routes"))
+    ap.add_argument("--out-prefix", default=None,
+                    help="exact output prefix; writes PREFIX.json and PREFIX.waypoints")
     args = ap.parse_args()
 
     energy = None
@@ -306,13 +321,14 @@ def main():
     route_ll = to_latlon_route(route, origin)
     goal_ll = enu_to_latlon(origin[0], origin[1], goal_enu[0], goal_enu[1])
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    tag = f"{prior.get('source','route')}_{args.lat}_{args.lon}"
+    jpath, wpath = _output_paths(prior, args.lat, args.lon,
+                                 args.out_dir, args.out_prefix)
+    os.makedirs(os.path.dirname(os.path.abspath(jpath)), exist_ok=True)
     jpath = write_json(route_ll, prior, origin, goal_ll,
-                       os.path.join(args.out_dir, f"route_{tag}.json"),
+                       jpath,
                        args.takeoff_alt, round(ceiling))
     wpath = write_qgc(route_ll, origin,
-                      os.path.join(args.out_dir, f"route_{tag}.waypoints"),
+                      wpath,
                       args.takeoff_alt, round(ceiling), plain=args.plain)
 
     if args.sitl_thermals:

@@ -22,12 +22,11 @@ SOAR_POLAR_CD0   0.027
 SOAR_POLAR_B     0.031
 SOAR_POLAR_K     25.6
 
-# ---- Altitude band (AGL, m) ----------------------------------------------
+# ---- Altitude band (metres relative to home; NOT terrain AGL) -----------
 SOAR_ALT_MIN     50       # [SITE] below this: stop thermalling, motor/RTL
 SOAR_ALT_CUTOFF  120      # [SITE] cruising below this: motor runs; above: glide
-SOAR_ALT_MAX     300      # [SITE] climb ceiling in a thermal — SET TO YOUR AIRSPACE
-                          #        LIMIT (many jurisdictions cap ~120 m AGL; soaring
-                          #        needs a higher limit/waiver to be useful)
+SOAR_ALT_MAX     300      # [SITE] climb ceiling relative to home. Terrain/AGL and
+                          #        legal-airspace compliance need separate checks.
 SOAR_MAX_DRIFT   0        # [SITE] 0 = off; else max m downwind of home before recentre
 
 # ---- Mode hysteresis (s) — avoid chatter ---------------------------------

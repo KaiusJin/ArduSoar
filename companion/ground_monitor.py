@@ -13,8 +13,8 @@ What it does:
   - Writes a status JSON every 5 s for the live dashboard
 
 Replanning approach:
-  Event-driven evaluation (AutoSOAR Section 5.1) + improvement threshold.
-  AtmoMap fuses observed climb rates at GPS cells (AutoSOAR Section 3.3).
+  Periodic/event-triggered evaluation with a custom improvement threshold.
+  AtmoMap is a reduced implementation inspired by AutoSOAR Section 3.3.
   route_score weights weather prior against observed lift (custom formula).
 
 Usage (real hardware):
@@ -48,10 +48,11 @@ def log(msg):
 class AtmoMap:
     """Real-time atmospheric lift grid built from VFR_HUD climb_rate telemetry.
 
-    Implements M×N independent scalar Kalman filters (AutoSOAR §3.3 Eq. 13–15).
+    Implements independent scalar filters inspired by AutoSOAR §3.3 Eq. 13.
+    It does not implement the full measurement/localization model in Eq. 14–15.
     Each cell: state ŵ (estimated lift m/s) and variance P.
     predict_all() applies the temporal decay (KF predict step, Eq. 13: A×ŵ).
-    update() applies a measurement (KF update step, Eq. 14–15).
+    update() applies a constant-noise scalar measurement update.
 
     Only positive lift (>= min_lift) triggers an update — sinking air is
     glide-phase noise, not a thermal worth routing toward.
@@ -62,7 +63,7 @@ class AtmoMap:
         self._w: dict = {}          # cell key → estimated lift ŵ (m/s)
         self._P: dict = {}          # cell key → KF variance P
         self.min_lift  = min_lift   # m/s threshold: discard weaker obs
-        self.R         = kf_R       # measurement noise variance (Eq. 14)
+        self.R         = kf_R       # custom constant measurement noise variance
         self.Q_rate    = kf_Q_rate  # process noise variance per second
 
     def _key(self, lat: float, lon: float):
@@ -151,7 +152,7 @@ def _replan(lat, lon, alt, source="openmeteo"):
         "--lat",    str(lat),
         "--lon",    str(lon),
         "--source", source,
-        "--out",    REPLAN_OUT,
+        "--out-prefix", REPLAN_OUT,
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -199,11 +200,10 @@ def main():
     ap.add_argument("--status", default="/tmp/companion_status.json",
                     help="Output status file for live dashboard")
     ap.add_argument("--eval-interval", type=int, default=60,
-                    help="Seconds between route evaluations (default 60 s; "
-                         "AutoSOAR uses event-driven with similar cadence)")
+                    help="Seconds between route evaluations (default 60 s; custom)")
     ap.add_argument("--upload-threshold", type=float, default=1.20,
                     help="Upload new route only if score > current × threshold "
-                         "(default 1.20 = 20%% improvement; AutoSOAR Section 5.1)")
+                         "(default 1.20 = 20%% improvement; custom)")
     ap.add_argument("--replan-source",
                     choices=["openmeteo", "soaringmeteo", "terrain"],
                     default="openmeteo",
@@ -249,6 +249,7 @@ def main():
     last_status = 0.0
     last_drift  = time.time()
     last_eval   = time.time()
+    altitude_critical = False
     DRIFT_INTERVAL = 30.0
 
     alt        = 0.0
@@ -294,13 +295,15 @@ def main():
             atmo_map.predict_all(dt)   # KF predict step: decay stale cells
             last_drift = now
 
-        # AutoSOAR §5.2.1 FSM: altitude-critical → force immediate evaluation
-        # If below minimum working altitude (400 m AGL, AutoSOAR Table A2),
-        # the aircraft is running out of altitude and needs a new route now.
-        if armed and lat != 0.0 and alt < 400.0 and not args.no_replan:
-            last_eval = 0.0   # force eval on next cycle
+        # AutoSOAR Table A2 uses 400 m AGL for its aircraft. Here the only
+        # available value is home-relative, so this remains an unvalidated
+        # placeholder. Trigger once on crossing below it, not on every message.
+        critical_now = armed and lat != 0.0 and alt < 400.0 and not args.no_replan
+        if critical_now and not altitude_critical:
+            last_eval = 0.0
+        altitude_critical = critical_now
 
-        # evaluate + conditional upload (AutoSOAR Section 5.1)
+        # evaluate + conditional upload (project-specific policy)
         if (not args.no_replan
                 and armed
                 and lat != 0.0

@@ -60,9 +60,6 @@ sitl/run_demo.sh
 
 ```bash
 sitl/run_demo.sh                  # reproduce ArduSoar thermalling
-companion/run_companion_demo.sh   # weather hotspot -> fly there -> hand off to ArduSoar
-companion/run_xc_demo.sh          # cross-country relay between forecast hotspots
-sitl/run_route_demo.sh            # fly a planner-generated route
 sitl/run_weather_truth_demo.sh    # real weather -> route -> thermals there -> fly (needs the patch)
 ```
 

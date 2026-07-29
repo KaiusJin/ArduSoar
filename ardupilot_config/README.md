@@ -40,8 +40,9 @@ confirm it turns back; sag the battery → confirm the low/critical actions fire
   (`SOAR_POLAR_CD0/B/K`) and the **airspeeds** matter most: ArduSoar predicts sink
   from the polar and calls the difference vs measured descent "air going up", so a
   wrong polar means wrong thermal detection/centring.
-- **[SITE]** — depends on the field and airspace, especially `SOAR_ALT_MAX` (your
-  legal AGL ceiling).
+- **[SITE]** — depends on the field and airspace. `SOAR_ALT_MAX` and
+  `FENCE_ALT_MAX` are relative to home, not terrain AGL; check terrain clearance
+  and the legal AGL limit separately.
 - **[OK]** — sensible defaults, fine to fly as-is.
 - **[WIRE]** — depends on FC wiring (airspeed I2C bus, RC switch channel).
 
@@ -55,7 +56,8 @@ confirm it turns back; sag the battery → confirm the low/critical actions fire
    `SOAR_POLAR_CD0/B/K` until ArduPilot's predicted sink matches the measured sink
    (Mission Planner has a soaring polar helper; or iterate by hand).
 3. **Altitude band.** Set `SOAR_ALT_MIN/CUTOFF/MAX` to your field + airspace.
-   `SOAR_ALT_MAX` must respect the legal AGL limit.
+   These values are relative to home. Validate the whole route against terrain
+   and the legal AGL limit; a single home-relative value is not an AGL guarantee.
 4. **Trigger.** Start `SOAR_VSPEED=0.7`; lower toward 0.5 if it ignores usable
    lift, raise if it latches onto noise.
 5. **Verify in the air** the same way SITL did: cruise → it cuts the motor and

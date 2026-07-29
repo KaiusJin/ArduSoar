@@ -21,7 +21,7 @@ class CandidatePoint:
     y: float
     prob: float              # belief this is a real, usable thermal (0..1)
     strength_guess: float
-    strength_var: float = 1.0  # KF variance on strength_guess (AutoSOAR §3.3 Eq. 13-15)
+    strength_var: float = 1.0  # variance for the simplified scalar strength filter
     visited: bool = False    # we have searched here
     confirmed: bool = False   # we found and used lift here
 
@@ -30,7 +30,9 @@ def prob_gaussian(w_star: float, w_z_min: float = 0.4,
                   sigma: float = 0.8) -> float:
     """P(thermal lift exceeds aircraft sink) = 1 − Φ((w_z_min − W*) / σ).
 
-    AutoSOAR Section 3.4.1: probability from Gaussian CDF over convolved lift.
+    Inspired by AutoSOAR Section 3.4.1, which applies a Gaussian CDF after
+    spatially convolving an onboard wind mean/variance map. Here W* and a fixed
+    sigma are substituted, so this is not the same probability model.
     w_z_min ≈ sink rate at nominal bank angle (0.4 m/s at 30° bank).
     sigma = forecast uncertainty (0.8 m/s is a reasonable prior for NWP output).
     Replaces the ad-hoc linear formula p = 0.4 + 0.1×W*.
@@ -94,9 +96,10 @@ class BeliefMap:
     def _score(self, c: CandidatePoint, from_pos: tuple, altitude: float,
                plan_alt: float, wind: tuple, airspeed: float,
                bank_sink: float = 0.7, cruise_sink: float = 0.4) -> float:
-        """Expected energy rate of the thermal detour: prob × Q_ij.
+        """Expected energy rate of the thermal detour.
 
-        Q_ij = (h_climb − h_lost) / (t_transit + t_climb)   (AutoSOAR Eq. 16–18)
+        Equivalent climb rate = (h_climb − h_lost) /
+        (t_transit + t_climb), simplified from AutoSOAR Eq. 16–18.
 
         Headwind enters through t_transit = dist / (airspeed − w_h) — not a
         separate multiplier (Chakrabarty & Langelaan 2011 Eq. 22; AutoSOAR Eq. 27).
@@ -118,8 +121,8 @@ class BeliefMap:
         if h_climb < 1.0:
             return 0.0
         t_climb = h_climb / w_c
-        Q_ij = (h_climb - h_lost) / (t_transit + t_climb)  # Eq. 16
-        return c.prob * Q_ij
+        equivalent_climb_rate = (h_climb - h_lost) / (t_transit + t_climb)
+        return c.prob * equivalent_climb_rate
 
     def best_target(self, x: float, y: float, altitude: float, goal,
                     glide_ratio: float = 22.0, reserve: float = 80.0,
@@ -146,7 +149,7 @@ class BeliefMap:
         """Multi-step lookahead: pick the next waypoint by scoring depth steps ahead.
 
         After each thermal visit ArduSoar climbs back to plan_alt. Step 2 score
-        is discounted by `discount`. Scoring uses Q_ij (prob × energy rate),
+        is discounted by `discount`. Scoring uses probability × equivalent energy rate,
         so headwind is embedded in transit time — not a separate multiplier.
         """
         usable = max(0.0, plan_alt - reserve)  # reachability uses thermal ceiling
@@ -162,7 +165,7 @@ class BeliefMap:
                 c, (x, y), altitude, plan_alt, wind, airspeed))
 
         # After visiting a thermal, aircraft is back at plan_alt; score next step
-        # 200 m below ceiling so Q_ij differentiates thermals by strength.
+        # 200 m below ceiling so equivalent-lift utility differentiates strength.
         next_alt = max(plan_alt - 200.0, 0.0)
         best_c, best_total = None, -1e9
         for c in pool:
@@ -181,12 +184,13 @@ class BeliefMap:
 
     def confirm(self, c: CandidatePoint, x: float, y: float, strength: float,
                 meas_var: float = 0.5) -> None:
-        # Occupancy: log-odds update, α_pos=0.0045 (AutoSOAR Eq. 20–21).
+        # Simplified occupancy update. AutoSOAR Eq. 19–21 uses these weights
+        # on a measurement-derived probability; this shortcut is not equivalent.
         c.confirmed = True
         c.visited = True
         lo = math.log(c.prob / (1.0 - c.prob)) + 0.0045
         c.prob = min(0.95, 1.0 / (1.0 + math.exp(-lo)))
-        # Strength: scalar KF measurement update (AutoSOAR §3.3 Eq. 13–15).
+        # Strength: simplified scalar KF measurement update.
         # meas_var = σ²_wz (sensor noise variance ≈ 0.5 (m/s)²).
         K = c.strength_var / (c.strength_var + meas_var)
         c.strength_guess = c.strength_guess + K * (strength - c.strength_guess)
@@ -194,7 +198,8 @@ class BeliefMap:
         c.x, c.y = x, y
 
     def disconfirm(self, c: CandidatePoint) -> None:
-        # Negative obs weighted 1/5 of positive (AutoSOAR Eq. 21: α_neg = α_pos/5).
+        # Keep AutoSOAR's 1/5 relative weight, but omit its measurement-derived
+        # probability term. This remains an uncalibrated shortcut.
         c.visited = True
         lo = math.log(c.prob / (1.0 - c.prob)) - 0.0009
         c.prob = max(0.05, 1.0 / (1.0 + math.exp(-lo)))
@@ -202,8 +207,8 @@ class BeliefMap:
     def drift(self, wind, dt: float) -> None:
         """Advect unconfirmed candidates downwind at 50% of wind speed.
 
-        AutoSOAR Table A1: thermal drift rate = 0.5 × wind speed. Thermals
-        are carried by convective eddies that lag the mean flow.
+        AutoSOAR Table A1 uses 0.5 × wind speed, explicitly described there as
+        a heuristic frequently quoted by manned glider pilots.
         """
         wx, wy = (wind.wx, wind.wy) if hasattr(wind, "wx") else (wind[0], wind[1])
         for c in self.candidates:
@@ -214,9 +219,9 @@ class BeliefMap:
     def decay(self, dt: float, tau: float = 750.0) -> None:
         """Unconfirmed candidates lose probability as the forecast ages.
 
-        tau = z_i / W* (Stull 1988: one eddy turnover time — boundary layer
-        depth divided by convective velocity scale). Typical: z_i≈1500 m,
-        W*≈2 m/s → tau≈750 s. Was 600 s (custom); now literature-backed.
+        tau is initialized from the z_i / W* eddy-turnover scale. The fixed
+        750 s default is a representative heuristic (z_i≈1500 m, W*≈2 m/s),
+        not a universally calibrated thermal lifetime.
         """
         f = math.exp(-dt / tau)
         for c in self.candidates:

@@ -47,8 +47,8 @@ def main():
                     help="SOAR_THERMAL_BANK — bank angle during thermaling (deg); "
                          "30 deg per AutoSOAR Depenbusch 2018")
     ap.add_argument("--wp-loiter-rad",     type=float, default=40.0,
-                    help="WP_LOITER_RAD — thermaling circle radius (m); "
-                         "40 m per AutoSOAR typical thermalling radius")
+                    help="WP_LOITER_RAD — thermaling circle radius (m); custom "
+                         "starting value that must match airspeed and bank angle")
     ap.add_argument("--mass-kg",           type=float, default=None,
                     help="Aircraft mass (kg) for SOAR_POLAR_K calculation")
     ap.add_argument("--wing-area-m2",      type=float, default=None,
@@ -109,7 +109,9 @@ def main():
 
     if not args.no_gps_wait:
         log("Waiting for GPS 3D fix…")
-        mav.wait_gps_fix(m)
+        if not mav.wait_gps_fix(m):
+            log("FAILED: no GPS 3D fix before timeout")
+            return 1
         log("GPS fix confirmed")
 
     log("=" * 56)

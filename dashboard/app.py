@@ -251,7 +251,7 @@ def control(_p, _pa, _r, speed, seed, wx, wy, airspeed, battery, decay, noise):
               State("seed", "value"), State("wx-source", "value"))
 def use_weather(n, lat, lon, seed, source):
     """Fetch a real forecast for (lat, lon) from the chosen source, build a prior,
-    and restart the flight on it (the glider's map is the forecast — no cheat)."""
+    and restart a forecast-conditioned synthetic simulation on it."""
     if not n:
         return ""
     try:

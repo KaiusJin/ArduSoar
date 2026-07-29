@@ -14,8 +14,8 @@ By default it does NOT arm or change mode — the pilot arms via RC and the FC f
 the AUTO mission; the companion just delivers the route and manages soaring. Use
 --arm only for bench testing.
 
-Example (on the Pi, FC on the primary UART):
-    python -m companion.pi5_run --conn /dev/serial0 --baud 921600 \
+Example (on a Pi 5 with UART0 mapped to GPIO14/15):
+    python -m companion.pi5_run --conn /dev/ttyAMA0 --baud 921600 \
         --route route.waypoints
 """
 import argparse
@@ -60,7 +60,8 @@ def log(msg):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--conn", default="/dev/serial0", help="FC serial device (or tcp:... for SITL)")
+    ap.add_argument("--conn", default="/dev/ttyAMA0",
+                    help="verified FC serial device (or tcp:... for SITL)")
     ap.add_argument("--baud", type=int, default=921600)
     ap.add_argument("--route", required=True, help="route .waypoints (or .json; .waypoints sibling is used)")
     ap.add_argument("--arm", action="store_true", help="BENCH ONLY: auto AUTO+arm (default: pilot arms via RC)")
@@ -112,6 +113,10 @@ def main():
     last_status = 0.0
     last_drift = time.time()
     DRIFT_INTERVAL = 30.0   # seconds between drift + decay updates
+    alt = 0.0
+    lat = 0.0
+    lon = 0.0
+    armed = False
     while True:
         try:
             msg = m.recv_match(type=["HEARTBEAT", "GLOBAL_POSITION_INT", "SYS_STATUS", "STATUSTEXT"],
@@ -125,6 +130,8 @@ def main():
             log(f"AP: {msg.text}")
         elif t == "GLOBAL_POSITION_INT":
             alt = msg.relative_alt / 1000.0
+            lat = msg.lat / 1e7
+            lon = msg.lon / 1e7
             armed = m.motors_armed()
             # arm soaring once safely airborne (enabling during the takeoff climb
             # would suppress throttle and stop the climb-out)
@@ -144,18 +151,19 @@ def main():
                 f"(top prob {max((c.prob for c in active), default=0):.2f})")
 
         if now - last_status > 5:
-                last_status = now
-                belief_snapshot = (
-                    [{"x": round(c.x), "y": round(c.y),
-                      "prob": round(c.prob, 2), "w_star": round(c.strength_guess, 2)}
-                     for c in belief.active()]
-                    if belief else []
-                )
-                status = {"t": now, "mode": m.flightmode, "armed": bool(armed),
-                          "alt_m": round(alt, 1), "lat": msg.lat / 1e7, "lon": msg.lon / 1e7,
-                          "soaring": soaring_on, "belief": belief_snapshot}
-                json.dump(status, open(args.status, "w"))
-                log(f"mode={m.flightmode:8s} alt={alt:6.1f} m armed={armed} soaring={soaring_on}")
+            last_status = now
+            belief_snapshot = (
+                [{"x": round(c.x), "y": round(c.y),
+                  "prob": round(c.prob, 2), "w_star": round(c.strength_guess, 2)}
+                 for c in belief.active()]
+                if belief else []
+            )
+            status = {"t": now, "mode": m.flightmode, "armed": bool(armed),
+                      "alt_m": round(alt, 1), "lat": lat, "lon": lon,
+                      "soaring": soaring_on, "belief": belief_snapshot}
+            with open(args.status, "w") as f:
+                json.dump(status, f)
+            log(f"mode={m.flightmode:8s} alt={alt:6.1f} m armed={armed} soaring={soaring_on}")
     log("Exiting")
     return 0
 
