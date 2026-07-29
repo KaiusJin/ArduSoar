@@ -279,6 +279,9 @@ def main():
             elif t == "VFR_HUD":
                 climb_rate = msg.climb
                 atmo_map.update(lat, lon, climb_rate)
+                if climb_rate >= atmo_map.min_lift:
+                    log(f"AtmoMap +obs ({lat:.5f},{lon:.5f}) "
+                        f"climb={climb_rate:+.2f} → ŵ={atmo_map.lookup(lat, lon):.3f}")
 
         now = time.time()
 
@@ -292,6 +295,9 @@ def main():
                 log(f"drift+decay: {len(active)} active  "
                     f"top_prob={max((c.prob for c in active), default=0):.2f}")
             atmo_map.predict_all(dt)   # KF predict step: decay stale cells
+            if atmo_map._w:
+                top = max(atmo_map._w, key=atmo_map._w.get)
+                log(f"AtmoMap decay dt={dt:.0f}s: {len(atmo_map)} cells  max_ŵ={atmo_map._w[top]:.3f}")
             last_drift = now
 
         # AutoSOAR §5.2.1 FSM: altitude-critical → force immediate evaluation

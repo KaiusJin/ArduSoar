@@ -142,6 +142,8 @@ def main():
             active = belief.active()
             log(f"drift+decay: {len(active)} active candidates "
                 f"(top prob {max((c.prob for c in active), default=0):.2f})")
+            for c in active:
+                log(f"  cand ENU({c.x:.0f},{c.y:.0f}) prob={c.prob:.3f} w*={c.strength_guess:.2f}")
 
         if now - last_status > 5:
                 last_status = now
