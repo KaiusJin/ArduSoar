@@ -210,7 +210,19 @@ def main():
                     help="Weather source for replanning")
     ap.add_argument("--no-replan", action="store_true",
                     help="Disable automatic replanning (monitor only)")
+    ap.add_argument("--indoor-lat", type=float, default=None,
+                    help="Fixed latitude for indoor tests (used when GPS reports 0,0)")
+    ap.add_argument("--indoor-lon", type=float, default=None,
+                    help="Fixed longitude for indoor tests (used when GPS reports 0,0)")
+    ap.add_argument("--min-lift", type=float, default=0.3,
+                    help="AtmoMap gate: discard climb_rate below this (m/s). "
+                         "Default 0.3 for outdoor; use 0.05 for indoor tests.")
+    ap.add_argument("--tau", type=float, default=750.0,
+                    help="AtmoMap decay time constant (s). "
+                         "Default 750 (outdoor thermal lifetime); use 120-200 for indoor tests.")
     args = ap.parse_args()
+    if (args.indoor_lat is None) != (args.indoor_lon is None):
+        ap.error("--indoor-lat and --indoor-lon must be specified together")
 
     # resolve initial route JSON path
     initial_json = None
@@ -224,7 +236,7 @@ def main():
     else:
         log("No initial route — belief overlay starts empty")
 
-    atmo_map   = AtmoMap()
+    atmo_map   = AtmoMap(min_lift=args.min_lift)
     curr_score = _route_score(initial_json, atmo_map)
 
     # connect with auto-retry
@@ -238,6 +250,12 @@ def main():
             log(f"Link not up: {e}  retrying in 5 s")
             time.sleep(5)
     log(f"MAVLink link established — aircraft system {m.target_system}")
+    m.mav.request_data_stream_send(
+        m.target_system, m.target_component,
+        mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
+    log("Data streams requested (4 Hz)")
+    if args.indoor_lat is not None:
+        log(f"Indoor mode: fixed position ({args.indoor_lat:.6f}, {args.indoor_lon:.6f})")
 
     if args.no_replan:
         log("Replanning disabled (--no-replan)")
@@ -253,8 +271,8 @@ def main():
 
     alt        = 0.0
     armed      = False
-    lat        = 0.0
-    lon        = 0.0
+    lat        = args.indoor_lat if args.indoor_lat is not None else 0.0
+    lon        = args.indoor_lon if args.indoor_lon is not None else 0.0
     climb_rate = 0.0
 
     while True:
@@ -272,32 +290,41 @@ def main():
             if t == "STATUSTEXT" and "oar" in str(msg.text):
                 log(f"AP: {msg.text}")
             elif t == "GLOBAL_POSITION_INT":
-                alt   = msg.relative_alt / 1000.0
-                lat   = msg.lat / 1e7
-                lon   = msg.lon / 1e7
+                alt  = msg.relative_alt / 1000.0
+                _lat = msg.lat / 1e7
+                _lon = msg.lon / 1e7
+                if _lat == 0.0 and _lon == 0.0 and args.indoor_lat is not None:
+                    lat = args.indoor_lat
+                    lon = args.indoor_lon
+                else:
+                    lat = _lat
+                    lon = _lon
                 armed = m.motors_armed()
             elif t == "VFR_HUD":
                 climb_rate = msg.climb
                 atmo_map.update(lat, lon, climb_rate)
                 if climb_rate >= atmo_map.min_lift:
+                    k = atmo_map._key(lat, lon)
                     log(f"AtmoMap +obs ({lat:.5f},{lon:.5f}) "
-                        f"climb={climb_rate:+.2f} → ŵ={atmo_map.lookup(lat, lon):.3f}")
+                        f"climb={climb_rate:+.2f} → ŵ={atmo_map.lookup(lat, lon):.3f} "
+                        f"P={atmo_map._P.get(k, 1.0):.3f}")
 
         now = time.time()
 
         # drift + decay + AtmoMap time-decay
-        if armed and now - last_drift >= DRIFT_INTERVAL:
+        if now - last_drift >= DRIFT_INTERVAL:
             dt = now - last_drift
-            if belief:
+            if armed and belief:
                 belief.drift(wind, dt)
                 belief.decay(dt)
                 active = belief.active()
                 log(f"drift+decay: {len(active)} active  "
                     f"top_prob={max((c.prob for c in active), default=0):.2f}")
-            atmo_map.predict_all(dt)   # KF predict step: decay stale cells
+            atmo_map.predict_all(dt, tau=args.tau)   # KF predict step: runs regardless of armed
             if atmo_map._w:
                 top = max(atmo_map._w, key=atmo_map._w.get)
-                log(f"AtmoMap decay dt={dt:.0f}s: {len(atmo_map)} cells  max_ŵ={atmo_map._w[top]:.3f}")
+                log(f"AtmoMap decay dt={dt:.0f}s: {len(atmo_map)} cells  "
+                    f"max_ŵ={atmo_map._w[top]:.3f} P={atmo_map._P[top]:.3f}")
             last_drift = now
 
         # AutoSOAR §5.2.1 FSM: altitude-critical → force immediate evaluation
