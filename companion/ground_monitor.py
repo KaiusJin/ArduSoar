@@ -39,6 +39,8 @@ from companion import mav as mavlib                              # noqa: E402
 
 REPLAN_OUT  = "/tmp/ground_replan"  # prefix for replanned route files
 _ATMO_GRID  = 0.001                 # degrees per cell (~111 m at equator)
+_SDC_LAT    = 43.47302922826872     # Student Design Centre, UW
+_SDC_LON    = -80.54017908317614
 
 
 def log(msg):
@@ -210,6 +212,8 @@ def main():
                     help="Weather source for replanning")
     ap.add_argument("--no-replan", action="store_true",
                     help="Disable automatic replanning (monitor only)")
+    ap.add_argument("--sdc", action="store_true",
+                    help=f"Shortcut: use SDC indoor coords ({_SDC_LAT:.6f}, {_SDC_LON:.6f})")
     ap.add_argument("--indoor-lat", type=float, default=None,
                     help="Fixed latitude for indoor tests (used when GPS reports 0,0)")
     ap.add_argument("--indoor-lon", type=float, default=None,
@@ -221,6 +225,11 @@ def main():
                     help="AtmoMap decay time constant (s). "
                          "Default 750 (outdoor thermal lifetime); use 120-200 for indoor tests.")
     args = ap.parse_args()
+    if args.sdc:
+        if args.indoor_lat is not None or args.indoor_lon is not None:
+            ap.error("--sdc conflicts with --indoor-lat/--indoor-lon")
+        args.indoor_lat = _SDC_LAT
+        args.indoor_lon = _SDC_LON
     if (args.indoor_lat is None) != (args.indoor_lon is None):
         ap.error("--indoor-lat and --indoor-lon must be specified together")
 
