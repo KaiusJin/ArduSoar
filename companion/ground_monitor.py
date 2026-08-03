@@ -28,6 +28,7 @@ import argparse
 import json
 import math
 import os
+import select
 import subprocess
 import sys
 import time
@@ -230,6 +231,8 @@ def main():
             ap.error("--sdc conflicts with --indoor-lat/--indoor-lon")
         args.indoor_lat = _SDC_LAT
         args.indoor_lon = _SDC_LON
+    if args.indoor_lat is not None and args.tau == 750.0:
+        args.tau = 150.0  # indoor default; override with explicit --tau if needed
     if (args.indoor_lat is None) != (args.indoor_lon is None):
         ap.error("--indoor-lat and --indoor-lon must be specified together")
 
@@ -284,6 +287,10 @@ def main():
     lon        = args.indoor_lon if args.indoor_lon is not None else 0.0
     climb_rate = 0.0
 
+    armed_at       = None   # time when motors armed this session
+    last_obs_t     = None   # time of most recent AtmoMap +obs
+    MIN_LIFT_FLOOR = 0.01   # auto-tune lower bound for min_lift
+
     while True:
         try:
             msg = m.recv_match(
@@ -308,11 +315,21 @@ def main():
                 else:
                     lat = _lat
                     lon = _lon
-                armed = m.motors_armed()
+                _armed_now = m.motors_armed()
+                if _armed_now and not armed:
+                    armed_at   = time.time()
+                    last_obs_t = None
+                    log(f"[AutoTune] Armed — watching for obs "
+                        f"(min_lift={atmo_map.min_lift:.3f}  tau={args.tau:.0f}s)")
+                elif not _armed_now and armed:
+                    armed_at   = None
+                    last_obs_t = None
+                armed = _armed_now
             elif t == "VFR_HUD":
                 climb_rate = msg.climb
                 atmo_map.update(lat, lon, climb_rate)
                 if climb_rate >= atmo_map.min_lift:
+                    last_obs_t = time.time()
                     k = atmo_map._key(lat, lon)
                     log(f"AtmoMap +obs ({lat:.5f},{lon:.5f}) "
                         f"climb={climb_rate:+.2f} → ŵ={atmo_map.lookup(lat, lon):.3f} "
@@ -320,9 +337,37 @@ def main():
 
         now = time.time()
 
+        # real-time param adjustment via keyboard (type command + Enter)
+        # +  → min_lift +0.01     -  → min_lift -0.01
+        # p  → print current params summary
+        if select.select([sys.stdin], [], [], 0.0)[0]:
+            cmd = sys.stdin.readline().strip().lower()
+            if cmd == '+':
+                atmo_map.min_lift = round(atmo_map.min_lift + 0.01, 3)
+                log(f"[Manual] min_lift ↑ {atmo_map.min_lift:.3f}")
+            elif cmd == '-':
+                atmo_map.min_lift = max(round(atmo_map.min_lift - 0.01, 3),
+                                        MIN_LIFT_FLOOR)
+                log(f"[Manual] min_lift ↓ {atmo_map.min_lift:.3f}")
+            elif cmd == 'p':
+                log(f"[Params] min_lift={atmo_map.min_lift:.3f}  tau={args.tau:.0f}s  "
+                    f"kf_R={atmo_map.R:.2f}  kf_Q={atmo_map.Q_rate:.3f}  "
+                    f"cells={len(atmo_map)}  "
+                    f"last_obs={'%.0fs ago' % (now - last_obs_t) if last_obs_t else 'none'}")
+
         # drift + decay + AtmoMap time-decay
         if now - last_drift >= DRIFT_INTERVAL:
             dt = now - last_drift
+            # auto-reduce min_lift if armed but still no obs after 60 s
+            if (armed and armed_at is not None and last_obs_t is None
+                    and atmo_map.min_lift > MIN_LIFT_FLOOR
+                    and now - armed_at > 60.0):
+                old_ml = atmo_map.min_lift
+                atmo_map.min_lift = max(round(atmo_map.min_lift * 0.5, 3),
+                                        MIN_LIFT_FLOOR)
+                log(f"[AutoTune] 60s无obs → min_lift {old_ml:.3f} → "
+                    f"{atmo_map.min_lift:.3f}")
+                armed_at = now  # reset: give another 60 s before next step
             if armed and belief:
                 belief.drift(wind, dt)
                 belief.decay(dt)
